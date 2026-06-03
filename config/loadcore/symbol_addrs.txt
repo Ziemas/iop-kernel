@@ -1,0 +1,2 @@
+start = 0x0; // type:func
+loadcore_main = 0x30; // type:func

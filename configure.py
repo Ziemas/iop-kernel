@@ -36,6 +36,7 @@ CROSS = "mips-linux-gnu-"
 
 build_targets = [
     "sysmem",
+    "loadcore",
 ]
 
 TARGET_ELFS = [
