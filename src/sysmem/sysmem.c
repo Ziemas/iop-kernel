@@ -36,8 +36,8 @@ void *func_0000071C(int type, unsigned long size, void *addr);
 int func_00000B74(void *area);
 void func_00000D30();
 struct mem_block *sysmem_get_block(void *addr);
-int func_00000EE4();
-int func_00000F2C();
+int func_00000EE4(int *unk);
+int func_00000F2C(int unk);
 
 // 0x10e0 (end of bss) + 0x103?
 // probably the _end symbol in the iop linker script
@@ -286,7 +286,63 @@ INCLUDE_ASM("asm/sysmem/nonmatchings/sysmem", func_0000071C);
 
 INCLUDE_ASM("asm/sysmem/nonmatchings/sysmem", func_00000B74);
 
-INCLUDE_ASM("asm/sysmem/nonmatchings/sysmem", func_00000D30);
+void
+func_00000D30()
+{
+	struct block_list *lst, *lst2, *del;
+	struct mem_block *b;
+	u_int i;
+
+	sysmem.unk10++;
+
+	for (lst = sysmem.list; lst->next; lst = lst->next)
+		;
+
+	if (lst->blocks[27].size > 0) {
+		lst->next = func_0000071C(0, 256, 0);
+		if (lst->next) {
+			lst->blocks[30].next = &lst->next->blocks[0];
+
+			lst = lst->next;
+			lst->next = 0;
+			for (i = 0; i < 31; i++) {
+				b = &lst->blocks[i];
+				lst->blocks[i].next = &lst->blocks[i + 1];
+
+				lst->blocks[i].address = 0;
+				lst->blocks[i].size = 0;
+				lst->blocks[i].in_use = 0;
+				lst->blocks[i].unk = 0;
+			}
+
+			lst->blocks[30].next = NULL;
+		}
+	}
+
+	lst = sysmem.list;
+	if (lst->next) {
+		while (lst->next) {
+			// dumb temporary, remove when cleaning up
+			lst2 = lst;
+
+			if (!lst->next->next) {
+				break;
+			}
+
+			lst = lst->next;
+		}
+
+		del = lst->next;
+		if (del && lst->blocks[27].size == 0) {
+			// dumb..., but need it to get a reg move
+			lst2 = lst;
+			lst2->blocks[30].next = 0;
+			lst2->next = 0;
+
+			func_00000B74(del);
+		}
+	}
+}
 
 struct mem_block *
 sysmem_get_block(void *addr)
@@ -303,7 +359,7 @@ sysmem_get_block(void *addr)
 }
 
 int
-func_00000EE4()
+func_00000EE4(int *unk)
 {
 	if (sysmem.unk8 && sysmem.unk8[0]) {
 		return sysmem.unk8[0]();
@@ -313,7 +369,7 @@ func_00000EE4()
 }
 
 int
-func_00000F2C()
+func_00000F2C(int unk)
 {
 	if (sysmem.unk8 && sysmem.unk8[1]) {
 		return sysmem.unk8[1]();
