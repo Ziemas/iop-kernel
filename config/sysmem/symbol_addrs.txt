@@ -1,5 +1,6 @@
 start = 0x60; // type:func
 sysmem_init = 0xe4; // type:func
+sysmem_get_block = 0xe80; // type:func
 
 QueryMemSize = 0x218; // type:func
 AllocSysMemory = 0x380; // type:func

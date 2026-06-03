@@ -1,2 +1,2 @@
 # end of BSS?
-D_10E0 = 0x10e0;
+_end = 0x10e0;
