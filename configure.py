@@ -197,7 +197,7 @@ def build_objdiff_units(tgt: str, config: dict[str, Any]) -> list[dict[str, Any]
     """
     segments: list[Any] = config["segments"]
 
-    tu_to_diff: list[tuple[Literal["asm", "c"], str]] = []
+    tu_to_diff: list[tuple[Literal["asm", "c", "hasm"], str]] = []
 
     for segment in segments:
         if not (isinstance(segment, dict) and segment["name"] == "main"):
@@ -221,7 +221,7 @@ def build_objdiff_units(tgt: str, config: dict[str, Any]) -> list[dict[str, Any]
             else:
                 raise RuntimeError("invalid subsegment type")
 
-            if subs_type in ("asm", "c", "cpp"):
+            if subs_type in ("asm", "c", "cpp", "hasm"):
                 tu_to_diff.append((subs_type, subs_name))
 
     units: list[dict[str, Any]] = []
@@ -229,13 +229,17 @@ def build_objdiff_units(tgt: str, config: dict[str, Any]) -> list[dict[str, Any]
     decomp_tu_count: int = 0
 
     for tu_type, tu_name in tu_to_diff:
-        tu_obj_suffix = f".{tu_type}.o" # .c.o or .cpp.o
+        tu_suffix = tu_type
+        if tu_suffix == "hasm":
+            tu_suffix = "s"
+
+        tu_obj_suffix = f".{tu_suffix}.o" # .c.o or .cpp.o
 
         target_path = Path("obj", tgt, tu_name).with_suffix(tu_obj_suffix)
 
         # since we only compile fully decompiled TUs, the
         # "c" type implies that the TU is complete
-        is_decompiled = tu_type in ("c", "cpp")
+        is_decompiled = tu_type in ("c", "cpp", "hasm")
 
         category = Path(tu_name).parts[0]
 
@@ -274,7 +278,8 @@ def write_objdiff_configuration(units: list[dict[str, Any]]):
         "watch_patterns": [
              "src/**/*.h",
              "src/**/*.c",
-             "src/**/*.cpp"
+             "src/**/*.cpp",
+             "src/**/*.s",
         ],
         "units": units,
     }
@@ -308,8 +313,6 @@ def build_objdiff_objects():
             continue
 
         asm_path = Path("asm", *target_path.parts[1:]).with_suffix("").with_suffix(".s")
-        print(target_path)
-        print(asm_path)
 
         assert asm_path.exists()
 
