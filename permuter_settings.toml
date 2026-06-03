@@ -1,0 +1,5 @@
+compiler_type = "gcc"
+compiler_command ="tools/toolchain/iop-gcc281/bin/iop-gcc -B tools/toolchain/iop-gcc281/lib/gcc-lib/mipsel-scei-elfl/2.8.1/ -O2 -G0 -g -Iinclude -Iinclude/common -Iinclude/sdk -c"
+assembler_command = "mipsel-none-elf-as -march=r3000 -G0 -Iinclude"
+
+[preserve_macros]

@@ -1,0 +1,17 @@
+start = 0x60; // type:func
+sysmem_init = 0xe4; // type:func
+
+QueryMemSize = 0x218; // type:func
+AllocSysMemory = 0x380; // type:func
+FreeSysMemory = 0x408; // type:func
+QueryMaxFreeMemSize = 0x244; // type:func
+QueryTotalFreeMemSize = 0x2e8; // type:func
+QueryBlockTopAddress = 0x488; // type:func
+QueryBlockSize = 0x50c; // type:func
+Kprintf = 0xfc0; // type:func
+KprintfSet = 0x100c; // type:func
+
+sysmem = 0x10c0; // size:0x14
+
+kprintf_handler = 0x10b0;
+kprintf_context = 0x10b4;

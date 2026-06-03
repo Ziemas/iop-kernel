@@ -1,0 +1,52 @@
+name: sysmem
+sha1: 7d6aea3dadf3d517da272f3563f6a47b59cc47b2
+options:
+    # paths
+    basename: sysmem
+    target_path: in/SYSMEM.rom
+    base_path: ../..
+    
+    asm_path: asm/sysmem
+    src_path: src/sysmem
+    asset_path: assets/sysmem
+    build_path: build
+    subalign: 4
+
+    extensions_path: tools/splat_ext 
+    symbol_addrs_path: config/sysmem/symbol_addrs.txt
+    reloc_addrs_path: config/sysmem/reloc_addrs.txt
+    undefined_funcs_auto_path: config/sysmem/undefined_funcs_auto.txt
+    undefined_syms_auto_path:  config/sysmem/undefined_syms_auto.txt
+
+    migrate_rodata_to_functions: True
+    named_regs_for_c_funcs: False
+    make_full_disasm_for_code: True
+
+    # compiler 
+    compiler: GCC
+    platform: psx
+
+    string_encoding: ASCII
+    
+    section_order: [".text", ".rodata", ".data", ".bss"]
+
+segments:
+    - name: main
+      type: code
+      start: 0x0
+      vram: 0x0
+      bss_size: 0x20
+      subsegments:
+        # .text
+        - [0x0, asm, export_stub]
+        - [0x60, c, sysmem]
+        - [0xfc0, c, kprintf]
+        - [0x1070, .rodata, sysmem]
+        - [0x1090, .data, sysmem]
+        - [0x10b0, .data, kprintf]
+
+        # .sbss / .bss
+        - { type: bss, vram: 0x10c0, name: sysmem }
+
+    - [0x10c0]
+        

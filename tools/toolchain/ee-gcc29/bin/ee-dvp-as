@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+SCRIPT_DIR="$(dirname "$0")"
+
+export LC_ALL=C
+export LD_LIBRARY_PATH="${SCRIPT_DIR}/../lib/"
+
+LD_SO="${SCRIPT_DIR}/../lib/ld-2.3.6.so"
+CMD="${0}.bin"
+
+exec "${LD_SO}" "${CMD}" "$@"
