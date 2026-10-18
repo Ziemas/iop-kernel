@@ -25,7 +25,7 @@ struct sysmem_state {
 	int mem_size;
 	struct block_list *list;
 	int (**unk8)();
-	int unkC;
+	int block_count;
 	volatile int unk10;
 };
 
@@ -59,7 +59,7 @@ start(int mem_size)
 	sysmem.list = (struct block_list *)heap_start;
 	sysmem.mem_size = sz;
 	sysmem.unk8 = NULL;
-	sysmem.unkC = 0;
+	sysmem.block_count = 0;
 	sysmem.unk10 = 0;
 
 	if (heap_start + 0x100 <= sz) {
@@ -97,7 +97,7 @@ sysmem_init()
 
 	lst->blocks[0].size = sysmem.mem_size / 256;
 	lst->blocks[30].next = 0;
-	sysmem.unkC = 1;
+	sysmem.block_count = 1;
 
 	p = AllocSysMemory(0, (u_int)sysmem.list, 0);
 	// we should have just allocated 0 - sysmem.list
@@ -284,7 +284,50 @@ func_0000070C()
 
 INCLUDE_ASM("asm/sysmem/nonmatchings/sysmem", func_0000071C);
 
+#if 1
 INCLUDE_ASM("asm/sysmem/nonmatchings/sysmem", func_00000B74);
+#else
+int
+func_00000B74(void *area)
+{
+	u_int address;
+	struct mem_block *b, *next;
+
+	address = (u_int)area >> 8;
+
+	if (!area) {
+		return -1;
+	}
+
+	if (!sysmem.list) {
+		return -1;
+	}
+
+	for (b = sysmem.list->blocks; b->next; b = b->next) {
+		if (b->size && b->address == (address)) {
+			break;
+		}
+	}
+
+	if (!b) {
+		return -1;
+	}
+
+	if (!b->in_use) {
+		return -1;
+	}
+
+	b->in_use = 0;
+	if (b->next) {
+		next = b->next;
+		if (next->size && next->in_use) {
+			sysmem.block_count--;
+			b->address = 0;
+			b->size = 0;
+		}
+	}
+}
+#endif
 
 void
 func_00000D30()
