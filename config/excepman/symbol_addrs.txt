@@ -1,0 +1,21 @@
+start = 0x0; // type:func
+
+RegisterExceptionHandler = 0x110; // type:func
+RegisterPriorityExceptionHandler = 0x134; // type:func
+RegisterDefaultExceptionHandler = 0x210; // type:func
+ReleaseExceptionHandler = 0x264; // type:func
+ReleaseDefaultExceptionHandler = 0x30c; // type:func
+
+AllocSysMemory = 0x694; // type:func
+RegisterLibraryEntries = 0x6b8; // type:func
+
+exception_code = 0x560;
+default_handler = 0x630;
+excepman_entry = 0x640;
+
+pool_pop = 0x478; // type:func
+pool_push = 0x4d4; // type:func
+pool_alloc = 0x4f0; // type:func
+
+
+em = 0x700; // size:0x4c

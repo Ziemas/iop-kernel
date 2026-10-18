@@ -35,8 +35,9 @@ COMPILE_CMD = f"{COMPILER_DIR}/iop-gcc -c {COMMON_INCLUDES} {COMPILER_FLAGS}"
 CROSS = "mips-linux-gnu-"
 
 build_targets = [
-    "sysmem",
+    "excepman",
     "loadcore",
+    "sysmem",
 ]
 
 TARGET_ELFS = [

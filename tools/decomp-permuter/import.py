@@ -568,6 +568,7 @@ def import_c_file(
         in_file,
         "-D__sgi",
         "-D_LANGUAGE_C",
+        "-D__LANGUAGE_C",
         "-DNON_MATCHING",
         "-DNONMATCHING",
         "-DPERMUTER",

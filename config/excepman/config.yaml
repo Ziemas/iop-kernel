@@ -1,0 +1,53 @@
+name: excepman
+sha1: 9512ce38edf5480c7aa7b83cbfec44fbc4f3fa17
+options:
+    # paths
+    basename: excepman
+    target_path: in/EXCEPMAN.rom
+    base_path: ../..
+
+    asm_path: asm/excepman
+    src_path: src/excepman
+    asset_path: assets/excepman
+    build_path: build
+
+    extensions_path: tools/splat_ext
+    symbol_addrs_path: config/excepman/symbol_addrs.txt
+    reloc_addrs_path: config/excepman/reloc_addrs.txt
+    undefined_funcs_auto_path: config/excepman/undefined_funcs_auto.txt
+    undefined_syms_auto_path:  config/excepman/undefined_syms_auto.txt
+
+    migrate_rodata_to_functions: True
+    named_regs_for_c_funcs: False
+    make_full_disasm_for_code: True
+    hasm_in_src_path: True
+
+    gp_value: 0x86f0
+
+    # compiler
+    compiler: GCC
+    platform: psx
+
+    string_encoding: ASCII
+
+    section_order: [".text", ".rodata", ".data", ".bss"]
+
+segments:
+    - name: main
+      type: code
+      start: 0x0
+      vram: 0x0
+      bss_size: 0x50
+      subsegments:
+        # .text
+        - [0x0, c, excepman]
+        - [0x560, hasm, handler]
+        - [0x640, asm, export_stub]
+        - [0x680, asm, import_stub]
+        - [0x6d0, .rodata, excepman]
+        - [0x6f0, .data, excepman]
+
+        # .sbss / .bss
+        - { type: bss, vram: 0x700, name: excepman }
+
+    - [0x700]
