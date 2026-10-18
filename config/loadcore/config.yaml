@@ -20,7 +20,6 @@ options:
     migrate_rodata_to_functions: True
     named_regs_for_c_funcs: False
     make_full_disasm_for_code: True
-    make_full_disasm_for_hasm: True
     hasm_in_src_path: True
 
     gp_value: 0x9f40

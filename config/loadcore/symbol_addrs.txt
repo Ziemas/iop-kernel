@@ -1,2 +1,11 @@
 start = 0x0; // type:func
 loadcore_main = 0x30; // type:func
+RegisterBootMode = 0x684; // type:func
+QueryBootMode = 0x6e0; // type:func
+RegisterLibraryEntries = 0x938; // type:func
+RegisterNonAutoLinkEntries = 0xb20; // type:func
+ReleaseLibraryEntries = 0xb80; // type:func
+QueryLibraryEntryTable = 0xc40; // type:func
+SetRebootTimeLibraryHandlingMode = 0xeec; // type:func
+FlushIcache = 0x1bf0; // type:func
+FlushDcache = 0x1cf0; // type:func

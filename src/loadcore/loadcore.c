@@ -2,9 +2,9 @@
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", loadcore_main);
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000684);
+INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", RegisterBootMode);
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000006E0);
+INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", QueryBootMode);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_0000073C);
 
@@ -14,13 +14,13 @@ INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_0000085C);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000008C8);
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000938);
+INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", RegisterLibraryEntries);
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000B20);
+INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", RegisterNonAutoLinkEntries);
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000B80);
+INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", ReleaseLibraryEntries);
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000C40);
+INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", QueryLibraryEntryTable);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000CAC);
 
@@ -32,7 +32,7 @@ INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000EC4);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000ED8);
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000EEC);
+INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", SetRebootTimeLibraryHandlingMode);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000FB0);
 
