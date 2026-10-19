@@ -1,4 +1,3 @@
-#define __LANGUAGE_ASSEMBLY
 #include "excepman.h"
 #include "cpureg.h"
 

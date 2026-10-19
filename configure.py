@@ -29,7 +29,8 @@ TOOLS_DIR = ROOT / "tools"
 COMPILER_DIR = f"{TOOLS_DIR}/toolchain/iop-gcc281/bin"
 COMMON_INCLUDES = "-Iinclude -Iinclude/common -Iinclude/sdk"
 
-COMPILER_FLAGS = f"-B {TOOLS_DIR}/toolchain/iop-gcc281/lib/gcc-lib/mipsel-scei-elfl/2.8.1/  -O2 -G0 -g -Wa,-Iinclude"
+CFLAGS = "-O2 -G0 -g -Wa,-Iinclude"
+COMPILER_FLAGS = f"-B {TOOLS_DIR}/toolchain/iop-gcc281/lib/gcc-lib/mipsel-scei-elfl/2.8.1/"
 COMPILE_CMD = f"{COMPILER_DIR}/iop-gcc -c {COMMON_INCLUDES} {COMPILER_FLAGS}"
 
 CROSS = "mips-linux-gnu-"
@@ -41,7 +42,7 @@ build_targets = [
 ]
 
 TARGET_ELFS = [
-    Path(f"in/{target.upper()}") for target in build_targets 
+    Path(f"in/{target.upper()}") for target in build_targets
 ]
 
 def exec_shell(command: List[str], stdout=subprocess.PIPE) -> str:
@@ -72,9 +73,15 @@ def write_rules(ninja):
     )
 
     ninja.rule(
+            "cc_as",
+            description="cc_as $in",
+            command=f"{COMPILE_CMD} -xassembler-with-cpp $in -o $out && {CROSS}strip $out -N dummy-symbol-name",
+    )
+
+    ninja.rule(
             "cc",
             description="cc $in",
-            command=f"{COMPILE_CMD} $in -o $out && {CROSS}strip $out -N dummy-symbol-name",
+            command=f"{COMPILE_CMD} {CFLAGS} $in -o $out && {CROSS}strip $out -N dummy-symbol-name",
     )
 
     ninja.rule(
@@ -138,7 +145,10 @@ def build_stuff(tgt: str, ninja, linker_entries: List[LinkerEntry]):
             continue
         object_paths.add(entry.object_path)
 
-        if isinstance(seg, splat.segtypes.common.asm.CommonSegAsm) or isinstance(
+        if isinstance(seg, splat.segtypes.common.hasm.CommonSegHasm):
+            build(entry.object_path, entry.src_paths, "cc_as")
+
+        elif isinstance(seg, splat.segtypes.common.asm.CommonSegAsm) or isinstance(
             seg, splat.segtypes.common.data.CommonSegData
         ):
             build(entry.object_path, entry.src_paths, "as")
@@ -155,9 +165,9 @@ def build_stuff(tgt: str, ninja, linker_entries: List[LinkerEntry]):
             print(f"ERROR: Unsupported build segment type {seg.type}")
             sys.exit(1)
 
-    elf_path = f"build/{tgt}.elf" 
+    elf_path = f"build/{tgt}.elf"
     ld_path = f"{tgt}.ld"
-    map_path = f"build/{tgt}.map" 
+    map_path = f"build/{tgt}.map"
     target_ld_args = f"-T config/{tgt}/undefined_syms_auto.txt -T config/{tgt}/undefined_funcs_auto.txt -T config/{tgt}/undefined_syms.txt"
 
     ninja.build(
@@ -344,7 +354,7 @@ def build_objdiff_objects():
 def fix_compile_commands():
     with open("compile_commands.json", "r") as f:
         data = json.load(f)
-    
+
     for entry in data[:]:
         file_path = Path(entry["file"])
         #
