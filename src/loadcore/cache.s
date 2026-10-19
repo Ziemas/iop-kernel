@@ -6,13 +6,13 @@
     .text
     .globl FlushIcache
 FlushIcache:
-    /* 1BF0 00001BF0 00600840 */  mfc0       t0, $12 /* handwritten instruction */
-    /* 1BF4 00001BF4 00000000 */  nop
-    /* 1BF8 00001BF8 00000C3C */  lui        t4, %hi(_FlushIcache)
-    /* 1BFC 00001BFC 0C1C8C25 */  addiu      t4, t4, %lo(_FlushIcache)
-    /* 1C00 00001C00 00A0013C */  lui        AT, (0xA0000000 >> 16)
-    /* 1C04 00001C04 25608101 */  or         t4, t4, AT
-    /* 1C08 00001C08 08008001 */  jr         t4
+    // calls _FlushIcache in the unchached segment
+    mfc0       t0, C0_SR
+    nop
+    la         t4, _FlushIcache
+    or         t4, K1BASE
+    jr         t4
+    // missing nop...
 
     // FlushIcache impl
     .globl _FlushIcache
@@ -75,20 +75,19 @@ _FlushIcache:
     /* 1CE4 00001CE4 00608840 */  mtc0       t0, $12 /* handwritten instruction */
     /* 1CE8 00001CE8 00000000 */  nop
     /* 1CEC 00001CEC 0800E003 */  jr         ra
+    /* 1CF0 00001CF0 00000000 */  nop
 
     .globl FlushDcache
 FlushDcache:
-    /* 1CF0 00001CF0 00000000 */  nop
-    /* 1CF4 00001CF4 00600840 */  mfc0       t0, $12 /* handwritten instruction */
-    /* 1CF8 00001CF8 00000000 */  nop
-    /* 1CFC 00001CFC 00000C3C */  lui        t4, %hi(_FlushDcache)
-    /* 1D00 00001D00 101D8C25 */  addiu      t4, t4, %lo(_FlushDcache)
-    /* 1D04 00001D04 00A0013C */  lui        AT, (0xA0000000 >> 16)
-    /* 1D08 00001D08 25608101 */  or         t4, t4, AT
-    /* 1D0C 00001D0C 08008001 */  jr         t4
+    mfc0       t0, C0_SR
+    nop
+    la         t4, _FlushDcache
+    or         t4, K1BASE
+    jr         t4
+    // missing nop...
 
     // FlushDCache impl
-    .globl _FlushDcache 
+    .globl _FlushDcache
 _FlushDcache:
     /* 1D10 00001D10 00608040 */   mtc0      zero, $12 /* handwritten instruction */
     /* 1D14 00001D14 00000000 */  nop
@@ -152,14 +151,12 @@ _FlushDcache:
 
     .globl func_00001DF8
 func_00001DF8:
-    /* 1DF8 00001DF8 00600840 */  mfc0       t0, $12 /* handwritten instruction */
-    /* 1DFC 00001DFC 00000000 */  nop
-    /* 1E00 00001E00 00000C3C */  lui        t4, %hi(func_00001E14)
-    /* 1E04 00001E04 141E8C25 */  addiu      t4, t4, %lo(func_00001E14)
-    /* 1E08 00001E08 00A0013C */  lui        AT, (0xA0000000 >> 16)
-    /* 1E0C 00001E0C 25608101 */  or         t4, t4, AT
-    /* 1E10 00001E10 08008001 */  jr         t4
-
+    mfc0       t0, C0_SR
+    nop
+    la         t4, func_00001E14
+    or         t4, K1BASE
+    jr         t4
+    // missing nop...
 
     .globl func_00001E14
 func_00001E14:
