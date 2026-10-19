@@ -7,5 +7,10 @@ RegisterNonAutoLinkEntries = 0xb20; // type:func
 ReleaseLibraryEntries = 0xb80; // type:func
 QueryLibraryEntryTable = 0xc40; // type:func
 SetRebootTimeLibraryHandlingMode = 0xeec; // type:func
+
 FlushIcache = 0x1bf0; // type:func
+_FlushIcache = 0x1c0c; // type:func
 FlushDcache = 0x1cf0; // type:func
+_FlushDcache = 0x1d10; // type:func
+func_00001DF8 = 0x1df8; // type:func
+func_00001E14 = 0x1e14; // type:func

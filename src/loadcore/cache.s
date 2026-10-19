@@ -8,15 +8,15 @@
 FlushIcache:
     /* 1BF0 00001BF0 00600840 */  mfc0       t0, $12 /* handwritten instruction */
     /* 1BF4 00001BF4 00000000 */  nop
-    /* 1BF8 00001BF8 00000C3C */  lui        t4, %hi(D_00001C0C)
-    /* 1BFC 00001BFC 0C1C8C25 */  addiu      t4, t4, %lo(D_00001C0C)
+    /* 1BF8 00001BF8 00000C3C */  lui        t4, %hi(_FlushIcache)
+    /* 1BFC 00001BFC 0C1C8C25 */  addiu      t4, t4, %lo(_FlushIcache)
     /* 1C00 00001C00 00A0013C */  lui        AT, (0xA0000000 >> 16)
     /* 1C04 00001C04 25608101 */  or         t4, t4, AT
     /* 1C08 00001C08 08008001 */  jr         t4
 
     // FlushIcache impl
-    .globl D_00001C0C
-D_00001C0C:
+    .globl _FlushIcache
+_FlushIcache:
     /* 1C0C 00001C0C 00608040 */   mtc0      zero, $12 /* handwritten instruction */
     /* 1C10 00001C10 00000000 */  nop
     /* 1C14 00001C14 00000000 */  nop
@@ -81,15 +81,15 @@ FlushDcache:
     /* 1CF0 00001CF0 00000000 */  nop
     /* 1CF4 00001CF4 00600840 */  mfc0       t0, $12 /* handwritten instruction */
     /* 1CF8 00001CF8 00000000 */  nop
-    /* 1CFC 00001CFC 00000C3C */  lui        t4, %hi(D_00001D10)
-    /* 1D00 00001D00 101D8C25 */  addiu      t4, t4, %lo(D_00001D10)
+    /* 1CFC 00001CFC 00000C3C */  lui        t4, %hi(_FlushDcache)
+    /* 1D00 00001D00 101D8C25 */  addiu      t4, t4, %lo(_FlushDcache)
     /* 1D04 00001D04 00A0013C */  lui        AT, (0xA0000000 >> 16)
     /* 1D08 00001D08 25608101 */  or         t4, t4, AT
     /* 1D0C 00001D0C 08008001 */  jr         t4
 
     // FlushDCache impl
-    .globl D_00001D10
-D_00001D10:
+    .globl _FlushDcache 
+_FlushDcache:
     /* 1D10 00001D10 00608040 */   mtc0      zero, $12 /* handwritten instruction */
     /* 1D14 00001D14 00000000 */  nop
     /* 1D18 00001D18 00000000 */  nop
@@ -154,15 +154,15 @@ D_00001D10:
 func_00001DF8:
     /* 1DF8 00001DF8 00600840 */  mfc0       t0, $12 /* handwritten instruction */
     /* 1DFC 00001DFC 00000000 */  nop
-    /* 1E00 00001E00 00000C3C */  lui        t4, %hi(D_00001E14)
-    /* 1E04 00001E04 141E8C25 */  addiu      t4, t4, %lo(D_00001E14)
+    /* 1E00 00001E00 00000C3C */  lui        t4, %hi(func_00001E14)
+    /* 1E04 00001E04 141E8C25 */  addiu      t4, t4, %lo(func_00001E14)
     /* 1E08 00001E08 00A0013C */  lui        AT, (0xA0000000 >> 16)
     /* 1E0C 00001E0C 25608101 */  or         t4, t4, AT
     /* 1E10 00001E10 08008001 */  jr         t4
 
 
-    .globl D_00001E14
-D_00001E14:
+    .globl func_00001E14
+func_00001E14:
     /* 1E14 00001E14 00608040 */   mtc0      zero, $12 /* handwritten instruction */
     /* 1E18 00001E18 00000000 */  nop
     /* 1E1C 00001E1C FEFF013C */  lui        AT, (0xFFFE0130 >> 16)
