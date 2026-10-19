@@ -90,7 +90,7 @@ int
 RegisterPriorityExceptionHandler(int excode, int priority, void (*handler)())
 {
 	struct exc_chain *h;
-	struct exc_chain *it, *unk;
+	struct exc_chain **pp, *unk;
 
 	h = (struct exc_chain *)handler;
 
@@ -104,19 +104,16 @@ RegisterPriorityExceptionHandler(int excode, int priority, void (*handler)())
 
 	priority &= 3;
 	unk = pool_pop();
-	it = (struct exc_chain *)&em.handler[excode];
 	unk->param = ((u_int)handler & ~3) | priority;
 
-	while (it->next) {
-		if (((it->next->param) & 3) >= priority) {
+	for (pp = &em.handler[excode]; *pp; pp = &(*pp)->next) {
+		if ((((*pp)->param) & 3) >= priority) {
 			break;
 		}
-
-		it = it->next;
 	}
 
-	unk->next = it->next;
-	it->next = unk;
+	unk->next = *pp;
+	*pp = unk;
 
 	func_0000038C();
 
@@ -142,29 +139,26 @@ RegisterDefaultExceptionHandler(void (*handler)())
 int
 ReleaseExceptionHandler(int excode, void (*handler)())
 {
-	struct exc_chain *it, *it2;
+	struct exc_chain **pp, *h;
 
 	if (excode >= EXCEP_MAX || excode < 0) {
 		return KE_ILLEGAL_EXPCODE;
 	}
 
-	it = (struct exc_chain *)&em.handler[excode];
-	while (it->next) {
-		if (((it->next->param) & ~3) == handler) {
+	for (pp = &em.handler[excode]; *pp; pp = &(*pp)->next) {
+		if ((((*pp)->param) & ~3) == handler) {
 			goto found;
 		}
-
-		it = it->next;
 	}
 
 	return KE_EXPHANDLER_NOUSE;
 
 found:
-	it2 = it->next;
-	it->next = it2->next;
-	*(u_int *)(it2->param & ~3) = 0;
+	h = *pp;
+	*pp = h->next;
+	*(u_int *)(h->param & ~3) = 0;
 
-	pool_push(it2);
+	pool_push(h);
 	func_0000038C();
 
 	return 0;
@@ -173,23 +167,19 @@ found:
 int
 ReleaseDefaultExceptionHandler(void (*handler)())
 {
-	void **it, **h;
+	void **pp, **h;
 
 	h = (void **)handler + 2;
-	it = &em.default_handler;
-
-	while (*it) {
-		if ((*it) == h) {
+	for (pp = &em.default_handler; *pp; pp = *pp - 8) {
+		if ((*pp) == h) {
 			goto found;
 		}
-
-		it = *it - 8;
 	}
 
 	return KE_EXPHANDLER_NOUSE;
 
 found:
-	*it = *(h - 2);
+	*pp = *(h - 2);
 	*(h - 2) = 0;
 
 	func_0000038C();
