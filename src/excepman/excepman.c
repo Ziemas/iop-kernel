@@ -146,7 +146,7 @@ ReleaseExceptionHandler(int excode, void (*handler)())
 	}
 
 	for (pp = &em.handler[excode]; *pp; pp = &(*pp)->next) {
-		if ((((*pp)->param) & ~3) == handler) {
+		if ((((*pp)->param) & ~3) == (u_int)handler) {
 			goto found;
 		}
 	}
