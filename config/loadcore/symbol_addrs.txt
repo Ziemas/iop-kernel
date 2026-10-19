@@ -14,3 +14,6 @@ FlushDcache = 0x1cf4; // type:func
 _FlushDcache = 0x1d10; // type:func
 func_00001DF8 = 0x1df8; // type:func
 func_00001E14 = 0x1e14; // type:func
+
+lc = 0x1f50; // size:0x24
+bootmodes = 0x1f80; // size:86
