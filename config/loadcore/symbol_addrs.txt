@@ -10,7 +10,7 @@ SetRebootTimeLibraryHandlingMode = 0xeec; // type:func
 
 FlushIcache = 0x1bf0; // type:func
 _FlushIcache = 0x1c0c; // type:func
-FlushDcache = 0x1cf0; // type:func
+FlushDcache = 0x1cf4; // type:func
 _FlushDcache = 0x1d10; // type:func
 func_00001DF8 = 0x1df8; // type:func
 func_00001E14 = 0x1e14; // type:func
