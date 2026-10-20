@@ -253,8 +253,8 @@ func_000008C8(void *ptr)
 	struct iop_mod *mod;
 
 	for (mod = lc.modlist; mod; mod = mod->next) {
-		if (ptr >= mod->text_addr &&
-		  (ptr < mod->text_addr + mod->text_size + mod->data_size + mod->bss_size)) {
+		if ((u_int)ptr >= mod->text_addr &&
+		  ((u_int)ptr < mod->text_addr + mod->text_size + mod->data_size + mod->bss_size)) {
 			return mod;
 		}
 	}
@@ -396,7 +396,7 @@ SetRebootTimeLibraryHandlingMode(libhead *lib, int mode)
 		}
 	}
 
-	if (*pp != lib && lib->next != 0x41c00000) {
+	if (*pp != lib && (u_int)lib->next != 0x41c00000) {
 		func_00001410(unk);
 		return KE_LIBRARY_NOTFOUND;
 	}
@@ -476,7 +476,7 @@ func_000010A0(libcaller *client)
 		instr += 2;
 	}
 
-	return !instr[1] && &client[1] < instr;
+	return !instr[1] && (u_int *)&client[1] < instr;
 }
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001138);
