@@ -46,7 +46,7 @@ segments:
         - [0x1e40, asm, export_stub]
         - [0x1ed0, asm, import_stub]
         - [0x1f20, .rodata, loadcore]
-        - [0x1f30, data, loadcore]
+        - [0x1f30, .data, loadcore]
 
         # .sbss / .bss
         - { type: bss, vram: 0x1f50, name: loadcore }

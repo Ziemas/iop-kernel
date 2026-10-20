@@ -1,0 +1,2 @@
+rom:0x158 symbol:etext reloc:MIPS_HI16
+rom:0x15c symbol:etext reloc:MIPS_LO16

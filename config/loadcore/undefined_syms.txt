@@ -1,0 +1,2 @@
+ftext = 0;
+etext = 0x1f20;

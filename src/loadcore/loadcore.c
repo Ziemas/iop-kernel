@@ -5,9 +5,8 @@
 #include "loadcore_internal.h"
 #include "sys/types.h"
 
-// TODO, loadcore_main uses the string
-// ModuleInfo Module = { "Module_Manager", 0x206 };
-// char idstring[16] = "PsIIsysmem3000";
+ModuleInfo Module = { "Module_Manager", 0x206 };
+char idstring[16] = "PsIIloadcore3000";
 
 // probably suspesnd/resume intr
 struct unk_funcs {
@@ -301,4 +300,3 @@ INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001B98);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001BD0);
 
-INCLUDE_RODATA("asm/loadcore/nonmatchings/loadcore", D_00001F20);
