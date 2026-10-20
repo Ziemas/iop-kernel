@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "kerror.h"
+#include "loadcore_internal.h"
 #include "sys/types.h"
 
 // TODO, loadcore_main uses the string
@@ -41,33 +42,37 @@ int func_00001410(int unk);
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", loadcore_main);
 
 void
-RegisterBootMode(u_int *b)
+RegisterBootMode(BootParam *param)
 {
-	int *modes = *(int **)0x3f4; // mode insert ptr
-	int count = (b[0] >> 24) + 1;
+	int count = param->extwords + 1;
+	int *dst = *(int **)0x3f4; // mode insert ptr
+	int *src = (int *)param;
 	int i;
 
-	if (modes + 1 * count <= &bootmodes[16]) {
+	if (dst + 1 * count <= &bootmodes[16]) {
 		for (i = 0; i < count; i++) {
-			*modes++ = *b++;
+			*dst++ = *src++;
 		}
 
-		*modes = 0;
-		*((int **)0x3f4) = modes;
+		*dst = 0;
+		*((int **)0x3f4) = dst;
 	}
 }
 
-int *
-QueryBootMode(int mode)
+BootParam *
+QueryBootMode(int key)
 {
 	int *mp = *(u_int **)0x3f0; // mode start ptr
+	BootParam *param;
 
 	while (*mp) {
-		if (mode == ((u_char *)mp)[2]) {
-			return mp;
+		param = (BootParam *)mp;
+
+		if (key == param->key) {
+			return param;
 		}
 
-		mp += ((u_char *)mp)[3] + 1;
+		mp += param->extwords + 1;
 	}
 
 	return 0;
