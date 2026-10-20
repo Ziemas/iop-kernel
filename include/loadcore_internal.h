@@ -13,6 +13,10 @@ typedef struct _libinfo {
 int AddRebootNotifyHandler(void *func, int priority, int *stat);
 void *QueryLibraryEntryTable(LibInfo *libinfo);
 
+// It always seems like the first word is constructed in a register
+// so the struct probably can't be used for RegisterBootMode
+#define BOOTMODE(key, value, extwords) (((key) << 16) | (value) | ((extwords) << 24))
+
 typedef struct bootparam {
 	unsigned short value;
 	unsigned char key;
@@ -20,7 +24,7 @@ typedef struct bootparam {
 	unsigned long eword[0];
 } BootParam;
 
-void RegisterBootMode(BootParam *param);
+void RegisterBootMode(int *param);
 BootParam *QueryBootMode(int key);
 #define QueryBootParam(key) QueryBootMode(key)
 

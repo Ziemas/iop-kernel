@@ -6,6 +6,6 @@ start:
     lw         v0, 0x0(a0)
     sll        sp, v0, 20
     addu       sp, -0x40
-    addu       fp, sp, zero
+    move       fp, sp
     la         gp, _gp
     j          loadcore_main

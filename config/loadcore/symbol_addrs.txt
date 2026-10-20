@@ -17,3 +17,11 @@ func_00001E14 = 0x1e14; // type:func
 
 lc = 0x1f50; // size:0x24
 bootmodes = 0x1f80; // size:86
+
+loadcore_entry = 0x1e40;
+
+AllocSysMemory = 0x1ee4; //type:func
+FreeSysMemory = 0x1eec; //type:func
+QueryMemSize = 0x1ef4; //type:func
+QueryBlockTopAddress = 0x1efc; //type:func
+QueryBlockSize = 0x1f04; //type:func

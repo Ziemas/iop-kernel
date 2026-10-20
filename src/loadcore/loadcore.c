@@ -4,6 +4,7 @@
 #include "kerror.h"
 #include "loadcore_internal.h"
 #include "sys/types.h"
+#include "sysmem.h"
 
 ModuleInfo Module = { "Module_Manager", 0x206 };
 char idstring[16] = "PsIIloadcore3000";
@@ -20,7 +21,7 @@ struct unk_funcs {
 
 struct loadcore {
 	libhead *lib;
-	int unk4;
+	char *unk4;
 	int unk8;
 	int unkC;
 	int unk10;
@@ -34,16 +35,97 @@ int bootmodes[17];
 
 struct loadcore lc;
 
+extern libhead loadcore_entry;
+
+// LinkLibraryEntries
+int func_00000CAC(void *start, u_int size);
+int func_00000D68(void *start, u_int size);
+int func_00001008(libhead *lib1, LibInfo *lib2);
+int func_00001038(libhead *lib1, LibInfo *info);
+int func_000010A0(libcaller *client);
+int func_00001138(libcaller *client);
+void func_0000130C(void *start, void *end, u_int val);
+
 // interrupt things?  would makes ens given the args
 int func_000013C8(int *unk);
 int func_00001410(int unk);
 
+extern void ftext;
+extern void etext;
+
+struct boot_arg {
+	u_int memsize;
+	u_int bootmode;
+	char *command;
+	void *start;
+	void *rp_buf;
+	u_int rp_size;
+	int mod_count;
+	void **mod_data;
+};
+
+#if 1
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", loadcore_main);
+#else
+void
+loadcore_main(u_int *arg)
+{
+	int bm[2];
+	int i;
+	u_int unk[8];
+	void *unkb;
+
+	// unk = __builtin_alloca(8 * 4);
+
+	unk[0] = arg[0];
+	unk[1] = arg[1];
+	unk[3] = arg[3];
+	unk[4] = arg[4];
+	unk[5] = arg[5];
+	unk[6] = arg[6];
+	unk[7] = arg[7];
+	unk[8] = arg[8];
+
+	lc.lib = (void *)unk[3];
+	*(u_int **)0x3f0 = bootmodes;
+	*(u_int *)0x3f4 = 0x3f4;
+	lc.unk20 = 0;
+	lc.unk4 = (void *)unk[3];
+	lc.unk14 = 2;
+	lc.unk8 = 0;
+	lc.unkC = 0;
+	lc.unk18 = 3;
+
+	for (i = 0; i < 17; i++) {
+		bootmodes[i] = 0;
+	}
+
+	// bm[0] = BOOTMODE(4, arg->bootmode, 0);
+	RegisterBootMode(bm);
+
+	lc.unk10 = (u_int)lc.unk4 - 48;
+
+	func_00000CAC(&ftext, &etext);
+	RegisterLibraryEntries(&loadcore_entry);
+	AllocSysMemory(2, 0x20c4, (void *)(0x1FFFFFFF << 2));
+	if (unk[4]) {
+		AllocSysMemory(2, unk[5], (void *)unk[4]);
+	}
+	unkb = __builtin_alloca(0xd00);
+	func_0000130C(unkb, unkb + 0xd00, 0x11111111);
+
+	if (QueryMemSize() >= unkb) {
+		AllocSysMemory(2, QueryMemSize() - ((u_int)unkb & (0x1FFFFFFF << 8)), unkb);
+	}
+}
+
+#endif
 
 void
-RegisterBootMode(BootParam *param)
+RegisterBootMode(int *param)
 {
-	int count = param->extwords + 1;
+	BootParam *p = (BootParam *)param;
+	int count = p->extwords + 1;
 	int *dst = *(int **)0x3f4; // mode insert ptr
 	int *src = (int *)param;
 	int i;
@@ -135,19 +217,101 @@ found:
 	return KE_LIBRARY_INUSE;
 }
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", QueryLibraryEntryTable);
+void *
+QueryLibraryEntryTable(LibInfo *libinfo)
+{
+	libhead *p;
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000CAC);
+	p = lc.lib;
+
+	while (p) {
+		if (func_00001008(p, libinfo)) {
+			if (!func_00001038(p, libinfo)) {
+				return &p[1];
+			}
+		}
+
+		p = p->next;
+	}
+
+	return 0;
+}
+
+int
+func_00000CAC(void *start, u_int size)
+{
+	libcaller *client;
+	int count;
+	u_int *p;
+	int i = size / 4;
+
+	// ??
+	count = i;
+	p = start;
+
+	for (i = count; i > 0; i--, p++) {
+		if (*p == LIBMAGIC) {
+			client = (libcaller *)p;
+
+			if (func_000010A0(client) && !(client->flags & 7)) {
+				if (func_00001138(client)) {
+					func_00000D68(start, size);
+					return -1;
+				}
+			}
+		}
+	}
+	return 0;
+}
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000D68);
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000EB4);
+struct loadcore *
+func_00000EB4()
+{
+	return &lc;
+}
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000EC4);
+void
+func_00000EC4(libcaller *client)
+{
+	client->flags |= 1;
+}
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000ED8);
+void
+func_00000ED8(libcaller *client)
+{
+	client->flags &= ~1;
+}
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", SetRebootTimeLibraryHandlingMode);
+int
+SetRebootTimeLibraryHandlingMode(libhead *lib, int mode)
+{
+	libhead **pp;
+	int unk;
+
+	if (!lib) {
+		return KE_ILLEGAL_LIBRARY;
+	}
+
+	func_000013C8(&unk);
+
+	for (pp = &lc.lib; *pp; pp = &(*pp)->next) {
+		if (*pp == lib) {
+			goto found;
+		}
+	}
+
+	if (*pp != lib && lib->next != 0x41c00000) {
+		func_00001410(unk);
+		return KE_LIBRARY_NOTFOUND;
+	}
+
+found:
+	lib->flags = (lib->flags & ~6) | (mode & 6);
+	func_00001410(unk);
+	return 0;
+}
 
 // TODO could be either libcaller or libhead
 int
@@ -171,19 +335,17 @@ func_00000FF8(libhead *lib1, libhead *lib2)
 	return (lib1->version & 0xff) - (lib2->version & 0xff);
 }
 
-// TODO could be either libcaller or libhead
 int
-func_00001008(libhead *lib1, libhead *lib2)
+func_00001008(libhead *lib1, LibInfo *info)
 {
-	return ((u_int *)lib2->name)[0] == ((u_int *)lib1->name)[0] &&
-	  (((u_int *)lib2->name)[1] == ((u_int *)lib1->name)[1]);
+	return ((u_int *)info->name)[0] == ((u_int *)lib1->name)[0] &&
+	  (((u_int *)info->name)[1] == ((u_int *)lib1->name)[1]);
 }
 
-// TODO could be either libcaller or libhead
 int
-func_00001038(libhead *lib1, libhead *lib2)
+func_00001038(libhead *lib1, LibInfo *info)
 {
-	return (lib1->version >> 8) - (lib2->version >> 8);
+	return (lib1->version >> 8) - (info->version >> 8);
 }
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001050);
