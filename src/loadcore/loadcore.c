@@ -126,9 +126,7 @@ found:
 	if (!lib->client) {
 		lib->client = 0;
 		*pp = lib->next;
-		lib->next = (void *)0x41c00000;
-
-		asm("" ::: "memory"); // :(
+		*(u_int *)&lib->next = 0x41c00000;
 
 		func_00001410(unk);
 		return KE_OK;
