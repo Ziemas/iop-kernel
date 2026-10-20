@@ -8,6 +8,16 @@
 // ModuleInfo Module = { "Module_Manager", 0x206 };
 // char idstring[16] = "PsIIsysmem3000";
 
+// probably suspesnd/resume intr
+struct unk_funcs {
+	int (*unk0)(int *);
+	int (*unk4)(int);
+
+	// TODO figure out arg on unk8 when the source for this
+	// struct is decompiled
+	int (*unk8)();
+};
+
 struct loadcore {
 	libhead *lib;
 	int unk4;
@@ -17,12 +27,16 @@ struct loadcore {
 	int unk14;
 	int unk18;
 	int unk1C;
-	int unk20;
+	struct unk_funcs *unk20;
 };
 
 int bootmodes[17];
 
 struct loadcore lc;
+
+// interrupt things?  would makes ens given the args
+int func_000013C8(int *unk);
+int func_00001410(int unk);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", loadcore_main);
 
@@ -84,7 +98,40 @@ RegisterNonAutoLinkEntries(libhead *lib)
 	return KE_OK;
 }
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", ReleaseLibraryEntries);
+int
+ReleaseLibraryEntries(libhead *lib)
+{
+	libhead **pp;
+	int unk;
+
+	func_000013C8(&unk);
+
+	for (pp = &lc.lib; *pp; pp = &(*pp)->next) {
+		if (*pp == lib) {
+			goto found;
+		}
+	}
+
+	if (*pp != lib) {
+		func_00001410(unk);
+		return KE_LIBRARY_NOTFOUND;
+	}
+
+found:
+	if (!lib->client) {
+		lib->client = 0;
+		*pp = lib->next;
+		lib->next = (void *)0x41c00000;
+
+		asm("" ::: "memory"); // :(
+
+		func_00001410(unk);
+		return KE_OK;
+	}
+
+	func_00001410(unk);
+	return KE_LIBRARY_INUSE;
+}
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", QueryLibraryEntryTable);
 
@@ -203,11 +250,35 @@ func_00001354(void *dst, void *src, int len)
 	return dst;
 }
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000013C8);
+int
+func_000013C8(int *unk)
+{
+	if (lc.unk20 && lc.unk20->unk0) {
+		return lc.unk20->unk0(unk);
+	}
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001410);
+	return 0;
+}
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001458);
+int
+func_00001410(int unk)
+{
+	if (lc.unk20 && lc.unk20->unk4) {
+		return lc.unk20->unk4(unk);
+	}
+
+	return 0;
+}
+
+int
+func_00001458()
+{
+	if (lc.unk20 && lc.unk20->unk8) {
+		return lc.unk20->unk8();
+	}
+
+	return 0;
+}
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000014A0);
 
