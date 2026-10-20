@@ -10,8 +10,6 @@ ModuleInfo Module = { "Exception_Manager", 0x101 };
 
 extern libhead excepman_entry;
 
-/* Given how weird every single loop over this is I kind of wonder if there
- * even is a struct for this */
 struct exc_chain {
 	struct exc_chain *next;
 	int param;
