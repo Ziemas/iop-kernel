@@ -19,15 +19,36 @@ struct unk_funcs {
 	int (*unk8)();
 };
 
+struct reboot_notify {
+	// lowest two bits store priority
+	u_int hnd;
+	u_int gp;
+};
+
+struct iop_mod {
+	struct iop_mod *next;
+	ModuleInfo *modinfo;
+	short version;
+	int id;
+	u_int entry;
+	u_int gp;
+	u_int text_addr;
+	u_int text_size;
+	u_int data_size;
+	u_int bss_size;
+};
+
 struct loadcore {
 	libhead *lib;
 	char *unk4;
 	int unk8;
 	int unkC;
-	int unk10;
-	int unk14;
-	int unk18;
-	int unk1C;
+	struct iop_mod *modlist;
+	int mod_count;
+	int next_id;
+
+	// insert ptr for reboot notifiers
+	struct reboot_notify *rbn_ptr;
 	struct unk_funcs *unk20;
 };
 
@@ -159,13 +180,87 @@ QueryBootMode(int key)
 	return 0;
 }
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_0000073C);
+// AddRebootNotifyHandler
+int
+func_0000073C(int (*hnd)(int *, int), char prio, int *stat)
+{
+	int s, ret;
+	u_int gp;
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000007E0);
+	s = 1;
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_0000085C);
+	if (!lc.rbn_ptr) {
+		ret = hnd(&s, 0);
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000008C8);
+		if (stat) {
+			*stat = ret;
+		}
+
+		return 0;
+	}
+
+	asm volatile("move %0, $gp \n" : "=r"(gp));
+
+	lc.rbn_ptr->hnd = (u_int)hnd + (prio & 3);
+	lc.rbn_ptr->gp = gp;
+
+	lc.rbn_ptr[1].hnd = 0;
+	lc.rbn_ptr++;
+
+	return 1;
+}
+
+// RegisterModule
+void
+func_000007E0(struct iop_mod *mod)
+{
+	struct iop_mod **pp;
+
+	for (pp = &lc.modlist; *pp; pp = &(*pp)->next) {
+		if (*pp >= mod) {
+			break;
+		}
+	}
+
+	mod->next = *pp;
+	*pp = mod;
+	mod->id = lc.next_id++;
+	lc.mod_count++;
+}
+
+// ReleaseModule
+void
+func_0000085C(struct iop_mod *mod)
+{
+	struct iop_mod **pp;
+
+	if (!mod) {
+		return;
+	}
+
+	for (pp = &lc.modlist; *pp; pp = &(*pp)->next) {
+		if (*pp == mod) {
+			*pp = (*pp)->next;
+			lc.mod_count--;
+			return;
+		}
+	}
+}
+
+struct iop_mod *
+func_000008C8(void *ptr)
+{
+	struct iop_mod *mod;
+
+	for (mod = lc.modlist; mod; mod = mod->next) {
+		if (ptr >= mod->text_addr &&
+		  (ptr < mod->text_addr + mod->text_size + mod->data_size + mod->bss_size)) {
+			return mod;
+		}
+	}
+
+	return NULL;
+}
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", RegisterLibraryEntries);
 
@@ -194,7 +289,7 @@ ReleaseLibraryEntries(libhead *lib)
 
 	for (pp = &lc.lib; *pp; pp = &(*pp)->next) {
 		if (*pp == lib) {
-			goto found;
+			break;
 		}
 	}
 
@@ -203,7 +298,6 @@ ReleaseLibraryEntries(libhead *lib)
 		return KE_LIBRARY_NOTFOUND;
 	}
 
-found:
 	if (!lib->client) {
 		lib->client = 0;
 		*pp = lib->next;
@@ -298,7 +392,7 @@ SetRebootTimeLibraryHandlingMode(libhead *lib, int mode)
 
 	for (pp = &lc.lib; *pp; pp = &(*pp)->next) {
 		if (*pp == lib) {
-			goto found;
+			break;
 		}
 	}
 
@@ -307,7 +401,6 @@ SetRebootTimeLibraryHandlingMode(libhead *lib, int mode)
 		return KE_LIBRARY_NOTFOUND;
 	}
 
-found:
 	lib->flags = (lib->flags & ~6) | (mode & 6);
 	func_00001410(unk);
 	return 0;
@@ -348,9 +441,43 @@ func_00001038(libhead *lib1, LibInfo *info)
 	return (lib1->version >> 8) - (info->version >> 8);
 }
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001050);
+void
+func_00001050(libcaller *client)
+{
+	u_int *instr = (u_int *)&client[1];
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000010A0);
+	while (*instr) {
+		if (instr[1] >> 26 != 9) {
+			break;
+		}
+
+		// TODO what instruction is this?
+		instr[0] = 0x3E00008;
+		instr += 2;
+	}
+}
+
+int
+func_000010A0(libcaller *client)
+{
+	u_int *instr;
+
+	if (client->magic != 0x41e00000) {
+		return 0;
+	}
+
+	instr = (u_int *)&client[1];
+
+	while (*instr) {
+		if (instr[1] >> 26 != 9 || (instr[0] != 0x3E00008 && instr[0] >> 26 != 2)) {
+			return 0;
+		}
+
+		instr += 2;
+	}
+
+	return !instr[1] && &client[1] < instr;
+}
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001138);
 
@@ -460,5 +587,14 @@ INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001A04);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001B98);
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001BD0);
+//  memset32
+void
+func_00001BD0(void *p, int len)
+{
+	u_int *ptr = p;
 
+	while (len > 0) {
+		*ptr++ = 0;
+		len--;
+	}
+}
