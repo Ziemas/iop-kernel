@@ -9,20 +9,21 @@
 ModuleInfo Module = { "Module_Manager", 0x206 };
 char idstring[16] = "PsIIloadcore3000";
 
-// probably suspesnd/resume intr
-struct unk_funcs {
-	int (*unk0)(int *);
-	int (*unk4)(int);
-
-	// TODO figure out arg on unk8 when the source for this
-	// struct is decompiled
-	int (*unk8)();
+struct intr_funcs {
+	int (*suspend_intr)(int *);
+	int (*resume_intr)(int);
+	int (*query_intr_ctx)();
 };
 
 struct reboot_notify {
 	// lowest two bits store priority
 	u_int hnd;
 	u_int gp;
+};
+
+struct unk_thing {
+	int unk0;
+	struct unk_thing *unk4;
 };
 
 struct iop_mod {
@@ -41,15 +42,17 @@ struct iop_mod {
 struct loadcore {
 	libhead *lib;
 	char *unk4;
-	int unk8;
-	int unkC;
+
+	// What is this thing? I can't find a single thing that writes to it
+	struct unk_thing unk8;
+
 	struct iop_mod *modlist;
 	int mod_count;
 	int next_id;
 
 	// insert ptr for reboot notifiers
 	struct reboot_notify *rbn_ptr;
-	struct unk_funcs *unk20;
+	struct intr_funcs *intr_func;
 };
 
 int bootmodes[17];
@@ -61,15 +64,19 @@ extern libhead loadcore_entry;
 // LinkLibraryEntries
 int func_00000CAC(void *start, u_int size);
 int func_00000D68(void *start, u_int size);
-int func_00001008(libhead *lib1, LibInfo *lib2);
-int func_00001038(libhead *lib1, LibInfo *info);
+int func_00000FB0(libhead *lib1, libhead *lib2);
+int func_00000FE0(libhead *lib1, libhead *lib2);
+int func_00000FF8(libhead *lib1, libhead *lib2);
+int func_00001008(libhead *lib, LibInfo *info);
+int func_00001038(libhead *lib, LibInfo *info);
 int func_000010A0(libcaller *client);
 int func_00001138(libcaller *client);
-void func_0000130C(void *start, void *end, u_int val);
+int func_000011D8(libcaller *client, libhead *lib);
+void lc_fill32(void *start, void *end, u_int val);
 
 // interrupt things?  would makes ens given the args
-int func_000013C8(int *unk);
-int func_00001410(int unk);
+int suspend_intr(int *unk);
+int resume_intr(int unk);
 
 extern void ftext;
 extern void etext;
@@ -262,7 +269,93 @@ func_000008C8(void *ptr)
 	return NULL;
 }
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", RegisterLibraryEntries);
+int
+RegisterLibraryEntries(libhead *lib)
+{
+	libhead *it;
+	libcaller *client, *migrate_list, **c_pp, *cnext, *v0;
+	int unk;
+
+	if (!lib || (u_int)lib->next != 0x41c00000) {
+		return KE_ILLEGAL_LIBRARY;
+	}
+
+	suspend_intr(&unk);
+
+	migrate_list = NULL;
+
+	for (it = lc.lib; it; it = it->next) {
+		if (func_00000FB0(lib, it) && !func_00000FE0(lib, it)) {
+			if (func_00000FF8(lib, it) <= 0) {
+				resume_intr(unk);
+				return KE_LIBRARY_FOUND;
+			}
+
+			// We've registered a newer version of a library we already had
+			// figure out which clients of the existing library we can move
+
+			c_pp = &it->client;
+			client = it->client;
+
+			it->client = 0;
+
+			while (client) {
+				cnext = client->client;
+				// check if the client is locked
+				if (!(client->flags & 1)) {
+					// else we move them into the migration list
+					client->client = migrate_list;
+					migrate_list = client;
+				} else {
+					// use c_pp to insert the locked clients into the previous library list
+					*c_pp = client;
+					c_pp = &client->client;
+					*c_pp = 0;
+				}
+
+				client = cnext;
+			}
+		}
+	}
+
+	// idk what the hell this is
+	client = (libcaller *)&lc.unk8;
+	while (client->client) {
+		if (func_00001008(lib, (LibInfo *)client->client) &&
+		  !func_00001038(lib, (LibInfo *)client->client)) {
+
+			v0 = client->client;
+			cnext = v0->client;
+
+			v0->client = migrate_list;
+			migrate_list = client->client;
+
+			client->client = cnext;
+		} else {
+			client = client->client;
+		}
+	}
+
+	// Move clients in migration list to new library
+	lib->client = 0;
+	while (migrate_list) {
+		client = migrate_list;
+		cnext = migrate_list->client;
+
+		func_000011D8(client, lib);
+
+		client->client = lib->client;
+		lib->client = client;
+		migrate_list = cnext;
+	}
+
+	lib->flags &= ~1;
+	lib->next = lc.lib;
+	lc.lib = lib;
+	resume_intr(unk);
+	FlushIcache();
+	return 0;
+}
 
 int
 RegisterNonAutoLinkEntries(libhead *lib)
@@ -285,7 +378,7 @@ ReleaseLibraryEntries(libhead *lib)
 	libhead **pp;
 	int unk;
 
-	func_000013C8(&unk);
+	suspend_intr(&unk);
 
 	for (pp = &lc.lib; *pp; pp = &(*pp)->next) {
 		if (*pp == lib) {
@@ -294,7 +387,7 @@ ReleaseLibraryEntries(libhead *lib)
 	}
 
 	if (*pp != lib) {
-		func_00001410(unk);
+		resume_intr(unk);
 		return KE_LIBRARY_NOTFOUND;
 	}
 
@@ -303,11 +396,11 @@ ReleaseLibraryEntries(libhead *lib)
 		*pp = lib->next;
 		*(u_int *)&lib->next = 0x41c00000;
 
-		func_00001410(unk);
+		resume_intr(unk);
 		return KE_OK;
 	}
 
-	func_00001410(unk);
+	resume_intr(unk);
 	return KE_LIBRARY_INUSE;
 }
 
@@ -388,7 +481,7 @@ SetRebootTimeLibraryHandlingMode(libhead *lib, int mode)
 		return KE_ILLEGAL_LIBRARY;
 	}
 
-	func_000013C8(&unk);
+	suspend_intr(&unk);
 
 	for (pp = &lc.lib; *pp; pp = &(*pp)->next) {
 		if (*pp == lib) {
@@ -397,16 +490,16 @@ SetRebootTimeLibraryHandlingMode(libhead *lib, int mode)
 	}
 
 	if (*pp != lib && (u_int)lib->next != 0x41c00000) {
-		func_00001410(unk);
+		resume_intr(unk);
 		return KE_LIBRARY_NOTFOUND;
 	}
 
 	lib->flags = (lib->flags & ~6) | (mode & 6);
-	func_00001410(unk);
+	resume_intr(unk);
 	return 0;
 }
 
-// TODO could be either libcaller or libhead
+// compare name
 int
 func_00000FB0(libhead *lib1, libhead *lib2)
 {
@@ -414,14 +507,14 @@ func_00000FB0(libhead *lib1, libhead *lib2)
 	  (((u_int *)lib1->name)[1] == ((u_int *)lib2->name)[1]);
 }
 
-// TODO could be either libcaller or libhead
+// compare major versoin
 int
 func_00000FE0(libhead *lib1, libhead *lib2)
 {
 	return (lib1->version >> 8) - (lib2->version >> 8);
 }
 
-// TODO could be either libcaller or libhead
+// compare minor version
 int
 func_00000FF8(libhead *lib1, libhead *lib2)
 {
@@ -429,16 +522,16 @@ func_00000FF8(libhead *lib1, libhead *lib2)
 }
 
 int
-func_00001008(libhead *lib1, LibInfo *info)
+func_00001008(libhead *lib, LibInfo *info)
 {
-	return ((u_int *)info->name)[0] == ((u_int *)lib1->name)[0] &&
-	  (((u_int *)info->name)[1] == ((u_int *)lib1->name)[1]);
+	return ((u_int *)info->name)[0] == ((u_int *)lib->name)[0] &&
+	  (((u_int *)info->name)[1] == ((u_int *)lib->name)[1]);
 }
 
 int
-func_00001038(libhead *lib1, LibInfo *info)
+func_00001038(libhead *lib, LibInfo *info)
 {
-	return (lib1->version >> 8) - (info->version >> 8);
+	return (lib->version >> 8) - (info->version >> 8);
 }
 
 void
@@ -479,14 +572,85 @@ func_000010A0(libcaller *client)
 	return !instr[1] && (u_int *)&client[1] < instr;
 }
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001138);
+int
+func_00001138(libcaller *client)
+{
+	libhead *lib;
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000011D8);
+	for (lib = lc.lib; lib; lib = lib->next) {
+		if (!(lib->flags & 1) && func_00001008(lib, (LibInfo *)client) &&
+		  !func_00001038(lib, (LibInfo *)client)) {
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000012A0);
+			func_000011D8(client, lib);
+			client->client = lib->client;
+			lib->client = client;
+			FlushIcache();
+			return 0;
+		}
+	}
+
+	return KE_ERROR;
+}
+
+int
+func_000011D8(libcaller *client, libhead *lib)
+{
+	u_int *exports, *insn;
+	u_int ordinal;
+	int export_count, i;
+
+	exports = (u_int *)&lib[1];
+	insn = (u_int *)&client[1];
+
+	export_count = 0;
+	while (exports[export_count]) {
+		export_count++;
+	}
+
+	while (*insn) {
+		if (insn[1] >> 26 != 9) {
+			break;
+		}
+
+		ordinal = insn[1] & 0xffff;
+		if (ordinal < export_count) {
+			insn[0] = (exports[ordinal] >> 2) & 0x3FFFFFF | 0x8000000;
+		} else {
+			insn[0] = 0x03E00008;
+		}
+
+		insn += 2;
+	}
+
+	client->flags = (client->flags & ~4) | 2;
+	return 0;
+}
+
+int
+func_000012A0(libhead *lib, libcaller *client)
+{
+	libcaller *it, *next;
+
+	if (lib->client == client) {
+		lib->client = client->client;
+		return 0;
+	}
+
+	for (it = lib->client; it->client; it = it->client) {
+		next = it->client;
+
+		if (next == client) {
+			it->client = next->client;
+			next->client = 0;
+			return 0;
+		}
+	}
+
+	return -1;
+}
 
 void
-func_0000130C(void *start, void *end, u_int val)
+lc_fill32(void *start, void *end, u_int val)
 {
 	u_int *p = start;
 	u_int *pe = end;
@@ -496,9 +660,8 @@ func_0000130C(void *start, void *end, u_int val)
 	} while (p < pe);
 }
 
-// strlen
 int
-func_00001328(const char *s)
+lc_strlen(const char *s)
 {
 	int len = 0;
 
@@ -512,9 +675,8 @@ func_00001328(const char *s)
 	return len;
 }
 
-// memmove
 void *
-func_00001354(void *dst, void *src, int len)
+lc_memmove(void *dst, void *src, int len)
 {
 	char *pd, *ps;
 	int i;
@@ -542,30 +704,30 @@ func_00001354(void *dst, void *src, int len)
 }
 
 int
-func_000013C8(int *unk)
+suspend_intr(int *unk)
 {
-	if (lc.unk20 && lc.unk20->unk0) {
-		return lc.unk20->unk0(unk);
+	if (lc.intr_func && lc.intr_func->suspend_intr) {
+		return lc.intr_func->suspend_intr(unk);
 	}
 
 	return 0;
 }
 
 int
-func_00001410(int unk)
+resume_intr(int unk)
 {
-	if (lc.unk20 && lc.unk20->unk4) {
-		return lc.unk20->unk4(unk);
+	if (lc.intr_func && lc.intr_func->resume_intr) {
+		return lc.intr_func->resume_intr(unk);
 	}
 
 	return 0;
 }
 
 int
-func_00001458()
+query_intr_context()
 {
-	if (lc.unk20 && lc.unk20->unk8) {
-		return lc.unk20->unk8();
+	if (lc.intr_func && lc.intr_func->query_intr_ctx) {
+		return lc.intr_func->query_intr_ctx();
 	}
 
 	return 0;
@@ -587,9 +749,8 @@ INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001A04);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001B98);
 
-//  memset32
 void
-func_00001BD0(void *p, int len)
+lc_memzero32(void *p, int len)
 {
 	u_int *ptr = p;
 

@@ -25,3 +25,13 @@ FreeSysMemory = 0x1eec; //type:func
 QueryMemSize = 0x1ef4; //type:func
 QueryBlockTopAddress = 0x1efc; //type:func
 QueryBlockSize = 0x1f04; //type:func
+
+lc_fill32 = 0x130c; // type:func
+lc_strlen = 0x1328; // type:func
+lc_memmove = 0x1354; // type:func
+
+suspend_intr = 0x13c8; // type:func
+resume_intr = 0x1410; // type:func
+query_intr_ctx = 0x1458; // type:func
+
+lc_memzero32 = 0x1bd0; // type:func
