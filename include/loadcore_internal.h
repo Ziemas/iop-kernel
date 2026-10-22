@@ -38,4 +38,27 @@ BootParam *QueryBootMode(int key);
 #define IBP_no_iop_service (1 << 1)
 #define IBP_no_auto_load (1 << 2)
 
+struct unk_result {
+	int type;
+	int entry;
+	int gp;
+	int vaddr;
+	int text_size;
+	int data_size;
+	int bss_size;
+	int memsz;
+	int modinfo;
+};
+
+struct IopMod {
+	u_int moduleinfo;
+	u_int entry;
+	u_int gp_value;
+	u_int text_size;
+	u_int data_size;
+	u_int bss_size;
+	u_short moduleversion;
+	char modulename[0];
+};
+
 #endif // LOADCORE_INTERNAL_H_

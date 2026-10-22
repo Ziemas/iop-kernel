@@ -1,6 +1,8 @@
 #include "loadcore.h"
 
+#include "coff.h"
 #include "common.h"
+#include "elf32.h"
 #include "kerror.h"
 #include "loadcore_internal.h"
 #include "sys/types.h"
@@ -69,9 +71,12 @@ int func_00000FE0(libhead *lib1, libhead *lib2);
 int func_00000FF8(libhead *lib1, libhead *lib2);
 int func_00001008(libhead *lib, LibInfo *info);
 int func_00001038(libhead *lib, LibInfo *info);
+void func_00001050(libcaller *client);
 int func_000010A0(libcaller *client);
 int func_00001138(libcaller *client);
 int func_000011D8(libcaller *client, libhead *lib);
+int func_000012A0(libhead *lib, libcaller *client);
+
 void lc_fill32(void *start, void *end, u_int val);
 
 // interrupt things?  would makes ens given the args
@@ -296,11 +301,11 @@ RegisterLibraryEntries(libhead *lib)
 
 			c_pp = &it->client;
 			client = it->client;
-
 			it->client = 0;
 
-			while (client) {
+			for (; client; client = cnext) {
 				cnext = client->client;
+
 				// check if the client is locked
 				if (!(client->flags & 1)) {
 					// else we move them into the migration list
@@ -312,8 +317,6 @@ RegisterLibraryEntries(libhead *lib)
 					c_pp = &client->client;
 					*c_pp = 0;
 				}
-
-				client = cnext;
 			}
 		}
 	}
@@ -451,7 +454,54 @@ func_00000CAC(void *start, u_int size)
 	return 0;
 }
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00000D68);
+int
+func_00000D68(void *start, u_int size)
+{
+	libcaller *client;
+	libhead *lib, *lnext;
+	void *end;
+
+	end = start + 4 * (size >> 2);
+
+	for (lib = lc.lib; lib; lib = lnext) {
+		lnext = lib->next;
+
+		for (client = lib->client; client; client = client->client) {
+			if (client >= start && client < end) {
+				if (func_000012A0(lib, client)) {
+					return -1;
+				}
+
+				client->flags &= ~7;
+				func_00001050(client);
+			}
+		}
+
+		if (lib >= start && lib < end) {
+			ReleaseLibraryEntries(lib);
+		}
+	}
+
+	// as usual, don't know whats actually up with this thing
+	client = (libcaller *)&lc.unk8;
+	while (client->client) {
+		libcaller *next, *n, *nn;
+
+		next = client->client;
+		if (next >= start && next < end) {
+			next->flags &= ~7;
+			func_00001050(client->client);
+			n = client->client;
+			nn = n->client;
+			n->client = 0;
+			client->client = nn;
+		} else {
+			client = client->client;
+		}
+	}
+
+	return 0;
+}
 
 struct loadcore *
 func_00000EB4()
@@ -636,7 +686,7 @@ func_000012A0(libhead *lib, libcaller *client)
 		return 0;
 	}
 
-	for (it = lib->client; it->client; it = it->client) {
+	for (it = lib->client; it->client; it = next) {
 		next = it->client;
 
 		if (next == client) {
@@ -733,16 +783,81 @@ query_intr_context()
 	return 0;
 }
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000014A0);
+int
+func_000014A0(void *buf, struct unk_result *a2)
+{
+	struct coff_fhdr *coff_hdr;
+	struct coff_opthdr *coff_opt;
+	struct coff_shdr *coff_shdr;
+	Elf32_Ehdr *elf_hdr;
+	Elf32_Phdr *elf_phdr;
+	struct IopMod *mod;
+
+	coff_hdr = buf;
+	coff_opt = (struct coff_opthdr *)&coff_hdr[1];
+	coff_shdr = (struct coff_shdr *)&coff_opt[1];
+	if (coff_hdr->f_magic == 0x162 && coff_opt->magic == 0x107 && coff_hdr->f_nscns < 0x20 &&
+	  (coff_hdr->f_flags & 0x2) == 0x2 && coff_hdr->f_opthdr == 0x38 &&
+	  coff_shdr->s_paddr == coff_opt->text_start) {
+
+		if (coff_opt->vstamp == 0x7001) {
+			return -1;
+		}
+
+		a2->type = 1;
+		a2->entry = coff_opt->entry;
+		a2->gp = coff_opt->gp_value;
+		a2->vaddr = coff_opt->text_start;
+		a2->text_size = coff_opt->tsize;
+		a2->data_size = coff_opt->dsize;
+		a2->bss_size = coff_opt->bsize;
+		a2->memsz = coff_opt->bss_start + coff_opt->bsize - coff_opt->text_start;
+		a2->modinfo = coff_opt->cprmask[3];
+
+		return a2->type;
+	}
+
+	elf_hdr = buf;
+	elf_phdr = buf + elf_hdr->e_phoff;
+	if (elf_hdr->e_ident[4] == 1 && elf_hdr->e_ident[5] == 1 && elf_hdr->e_machine == EM_MIPS &&
+	  elf_hdr->e_phentsize == 32 && elf_hdr->e_phnum == 2 && elf_phdr->p_type == 0x70000080 &&
+	  (elf_hdr->e_type == 0xff80 || elf_hdr->e_type == 0xff81 || elf_hdr->e_type == 2)) {
+
+		if (elf_hdr->e_type == 0xff80 || elf_hdr->e_type == 0xff81) {
+			a2->type = 4;
+		} else if (elf_hdr->e_type == 2) {
+			a2->type = 3;
+		}
+
+		mod = buf + elf_phdr->p_offset;
+
+		a2->entry = mod->entry;
+		a2->gp = mod->gp_value;
+		a2->vaddr = elf_phdr[1].p_vaddr;
+		a2->text_size = mod->text_size;
+		a2->data_size = mod->data_size;
+		a2->bss_size = mod->bss_size;
+		a2->memsz = elf_phdr[1].p_memsz;
+		a2->modinfo = mod->moduleinfo;
+
+		return a2->type;
+	}
+
+	a2->type = -1;
+	return -1;
+}
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_0000169C);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001734);
 
+// load coff
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000017C4);
 
+// load static elf
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001844);
 
+// load relocatable elf
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000018A8);
 
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001A04);
