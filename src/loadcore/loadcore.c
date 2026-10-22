@@ -32,6 +32,7 @@ struct iop_mod {
 	struct iop_mod *next;
 	ModuleInfo *modinfo;
 	short version;
+	short unkA;
 	int id;
 	u_int entry;
 	u_int gp;
@@ -76,7 +77,10 @@ int func_000010A0(libcaller *client);
 int func_00001138(libcaller *client);
 int func_000011D8(libcaller *client, libhead *lib);
 int func_000012A0(libhead *lib, libcaller *client);
-
+void func_00001734(struct exe_info *info, struct iop_mod *mod);
+void func_000017C4(void *buf);
+void func_00001844(void *buf);
+void func_000018A8(void *buf, struct exe_info *info);
 void lc_fill32(void *start, void *end, u_int val);
 
 // interrupt things?  would makes ens given the args
@@ -847,9 +851,54 @@ func_000014A0(void *buf, struct exe_info *info)
 	return -1;
 }
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_0000169C);
+int
+func_0000169C(void *buf, struct exe_info *info)
+{
+	switch (info->type) {
+	case 1:
+		func_000017C4(buf);
+		break;
+	case 3:
+		func_00001844(buf);
+		break;
+	case 4:
+		func_000018A8(buf, info);
+		break;
+	default:
+		return -1;
+	}
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001734);
+	func_00001734(info, (struct iop_mod *)(info->vaddr - 48));
+	return 0;
+}
+
+void
+func_00001734(struct exe_info *info, struct iop_mod *mod)
+{
+	ModuleInfo **minfo;
+
+	mod->next = NULL;
+	mod->modinfo = NULL;
+	mod->version = 0;
+	mod->unkA = 0;
+	mod->id = 0;
+
+	minfo = (ModuleInfo **)info->modinfo;
+	if (info->modinfo + 1 != 0) {
+		// TODO need to investigate what this actually points to,
+		// this doesn't seem right?
+
+		mod->modinfo = *minfo;
+		mod->version = ((short *)info->modinfo)[2];
+	}
+
+	mod->entry = info->entry;
+	mod->gp = info->gp;
+	mod->text_addr = info->vaddr;
+	mod->text_size = info->text_size;
+	mod->data_size = info->data_size;
+	mod->bss_size = info->bss_size;
+}
 
 // load coff
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000017C4);
