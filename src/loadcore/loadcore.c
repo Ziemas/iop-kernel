@@ -467,7 +467,7 @@ func_00000D68(void *start, u_int size)
 		lnext = lib->next;
 
 		for (client = lib->client; client; client = client->client) {
-			if (client >= start && client < end) {
+			if ((void *)client >= start && (void *)client < end) {
 				if (func_000012A0(lib, client)) {
 					return -1;
 				}
@@ -477,7 +477,7 @@ func_00000D68(void *start, u_int size)
 			}
 		}
 
-		if (lib >= start && lib < end) {
+		if ((void *)lib >= start && (void *)lib < end) {
 			ReleaseLibraryEntries(lib);
 		}
 	}
@@ -488,7 +488,7 @@ func_00000D68(void *start, u_int size)
 		libcaller *next, *n, *nn;
 
 		next = client->client;
-		if (next >= start && next < end) {
+		if ((void *)next >= start && (void *)next < end) {
 			next->flags &= ~7;
 			func_00001050(client->client);
 			n = client->client;
@@ -784,7 +784,7 @@ query_intr_context()
 }
 
 int
-func_000014A0(void *buf, struct unk_result *a2)
+func_000014A0(void *buf, struct exe_info *info)
 {
 	struct coff_fhdr *coff_hdr;
 	struct coff_opthdr *coff_opt;
@@ -804,17 +804,17 @@ func_000014A0(void *buf, struct unk_result *a2)
 			return -1;
 		}
 
-		a2->type = 1;
-		a2->entry = coff_opt->entry;
-		a2->gp = coff_opt->gp_value;
-		a2->vaddr = coff_opt->text_start;
-		a2->text_size = coff_opt->tsize;
-		a2->data_size = coff_opt->dsize;
-		a2->bss_size = coff_opt->bsize;
-		a2->memsz = coff_opt->bss_start + coff_opt->bsize - coff_opt->text_start;
-		a2->modinfo = coff_opt->cprmask[3];
+		info->type = 1;
+		info->entry = coff_opt->entry;
+		info->gp = coff_opt->gp_value;
+		info->vaddr = coff_opt->text_start;
+		info->text_size = coff_opt->tsize;
+		info->data_size = coff_opt->dsize;
+		info->bss_size = coff_opt->bsize;
+		info->memsz = coff_opt->bss_start + coff_opt->bsize - coff_opt->text_start;
+		info->modinfo = coff_opt->cprmask[3];
 
-		return a2->type;
+		return info->type;
 	}
 
 	elf_hdr = buf;
@@ -824,26 +824,26 @@ func_000014A0(void *buf, struct unk_result *a2)
 	  (elf_hdr->e_type == 0xff80 || elf_hdr->e_type == 0xff81 || elf_hdr->e_type == 2)) {
 
 		if (elf_hdr->e_type == 0xff80 || elf_hdr->e_type == 0xff81) {
-			a2->type = 4;
+			info->type = 4;
 		} else if (elf_hdr->e_type == 2) {
-			a2->type = 3;
+			info->type = 3;
 		}
 
 		mod = buf + elf_phdr->p_offset;
 
-		a2->entry = mod->entry;
-		a2->gp = mod->gp_value;
-		a2->vaddr = elf_phdr[1].p_vaddr;
-		a2->text_size = mod->text_size;
-		a2->data_size = mod->data_size;
-		a2->bss_size = mod->bss_size;
-		a2->memsz = elf_phdr[1].p_memsz;
-		a2->modinfo = mod->moduleinfo;
+		info->entry = mod->entry;
+		info->gp = mod->gp_value;
+		info->vaddr = elf_phdr[1].p_vaddr;
+		info->text_size = mod->text_size;
+		info->data_size = mod->data_size;
+		info->bss_size = mod->bss_size;
+		info->memsz = elf_phdr[1].p_memsz;
+		info->modinfo = mod->moduleinfo;
 
-		return a2->type;
+		return info->type;
 	}
 
-	a2->type = -1;
+	info->type = -1;
 	return -1;
 }
 

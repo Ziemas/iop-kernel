@@ -38,7 +38,7 @@ BootParam *QueryBootMode(int key);
 #define IBP_no_iop_service (1 << 1)
 #define IBP_no_auto_load (1 << 2)
 
-struct unk_result {
+struct exe_info {
 	int type;
 	int entry;
 	int gp;
