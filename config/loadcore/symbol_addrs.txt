@@ -1,4 +1,6 @@
 start = 0x0; // type:func
+
+func_0000067C = 0x67c; // type:func
 loadcore_main = 0x30; // type:func
 RegisterBootMode = 0x684; // type:func
 QueryBootMode = 0x6e0; // type:func
@@ -34,4 +36,5 @@ suspend_intr = 0x13c8; // type:func
 resume_intr = 0x1410; // type:func
 query_intr_context = 0x1458; // type:func
 
+lc_memcpy32 = 0x1b98; // type:func
 lc_memzero32 = 0x1bd0; // type:func

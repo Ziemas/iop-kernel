@@ -64,6 +64,8 @@ struct loadcore lc;
 
 extern libhead loadcore_entry;
 
+int func_0000073C(int (*hnd)(int *, int), char prio, int *stat);
+void func_000007E0(struct iop_mod *mod);
 // LinkLibraryEntries
 int func_00000CAC(void *start, u_int size);
 int func_00000D68(void *start, u_int size);
@@ -77,24 +79,34 @@ int func_000010A0(libcaller *client);
 int func_00001138(libcaller *client);
 int func_000011D8(libcaller *client, libhead *lib);
 int func_000012A0(libhead *lib, libcaller *client);
+int func_000014A0(void *buf, struct exe_info *info);
+int func_0000169C(void *buf, struct exe_info *info);
 void func_00001734(struct exe_info *info, struct iop_mod *mod);
 void func_000017C4(void *buf);
 void func_00001844(void *buf);
 void func_000018A8(void *buf, struct exe_info *info);
+void func_00001A04();
 void lc_fill32(void *start, void *end, u_int val);
+
+void *lc_memmove(void *dst, void *src, int len);
+void lc_memcpy32(void *src, void *dst, u_int size);
+void lc_memzero32(void *p, int len);
+
+int lc_strlen(const char *s);
 
 // interrupt things?  would makes ens given the args
 int suspend_intr(int *unk);
 int resume_intr(int unk);
 
-extern void ftext;
-extern void etext;
+extern void _ftext;
+extern void _etext;
+extern void _end;
 
 struct boot_arg {
 	u_int memsize;
-	u_int bootmode;
-	char *command;
-	void *start;
+	u_int mode;
+	void *arg;
+	void *load_base;
 	void *rp_buf;
 	u_int rp_size;
 	int mod_count;
@@ -105,58 +117,191 @@ struct boot_arg {
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", loadcore_main);
 #else
 void
-loadcore_main(u_int *arg)
+loadcore_main(u_int *in)
 {
+	struct boot_arg arg_st;
+	struct loadcore *core;
+	struct iop_mod *sysmem_mod;
+	struct iop_mod *lc_mod;
+	struct iop_mod *mod;
+	struct boot_arg *arg;
 	int bm[2];
 	int i;
 	u_int unk[8];
 	void *unkb;
+	u_int unkarr[0xd0];
+	char arg_copy[8];
+	void *mptr;
+	int v8;
+	int v10;
+	void *mp;
+	int type;
+	struct exe_info info;
+	void *modalloc;
+	int ret;
+	void *aligned_start;
+	void *tmp_alloc;
+	void *sp1, *sp2;
+	char *argstr;
+	void *addr;
 
-	// unk = __builtin_alloca(8 * 4);
+	arg = &arg_st;
 
-	unk[0] = arg[0];
-	unk[1] = arg[1];
-	unk[3] = arg[3];
-	unk[4] = arg[4];
-	unk[5] = arg[5];
-	unk[6] = arg[6];
-	unk[7] = arg[7];
-	unk[8] = arg[8];
+	arg->memsize = in[0];
+	arg->mode = in[1];
+	arg->arg = in[2];
+	arg->load_base = in[3];
+	arg->rp_buf = in[4];
+	arg->rp_size = in[5];
+	arg->mod_count = in[6];
+	arg->mod_data = in[7];
 
-	lc.lib = (void *)unk[3];
+	// arg = *_arg;
+
+	lc.lib = arg->arg;
+
 	*(u_int **)0x3f0 = bootmodes;
-	*(u_int *)0x3f4 = 0x3f4;
-	lc.unk20 = 0;
-	lc.unk4 = (void *)unk[3];
-	lc.unk14 = 2;
-	lc.unk8 = 0;
-	lc.unkC = 0;
-	lc.unk18 = 3;
+	*(u_int **)0x3f4 = bootmodes;
+
+	lc.intr_func = NULL;
+	lc.unk4 = arg->arg;
+	lc.mod_count = 2;
+	lc.unk8.unk0 = 0;
+	lc.unk8.unk4 = 0;
+	lc.next_id = 3;
 
 	for (i = 0; i < 17; i++) {
 		bootmodes[i] = 0;
 	}
 
-	// bm[0] = BOOTMODE(4, arg->bootmode, 0);
+	bm[0] = BOOTMODE(4, arg->mode, 0);
 	RegisterBootMode(bm);
 
-	lc.unk10 = (u_int)lc.unk4 - 48;
+	// the iop_mod struct precedes the module .text
+	lc_mod = &_ftext - 0x30;
+	sysmem_mod = (struct iop_mod *)lc.unk4 - 0x30;
+	lc.modlist = lc_mod;
 
-	func_00000CAC(&ftext, &etext);
+	sysmem_mod->id = 1;
+	sysmem_mod->unkA = 3;
+	sysmem_mod->next = lc_mod;
+	lc_mod->id = 2;
+	lc_mod->unkA = 3;
+
+	// scan our text section for imports to resolve
+	func_00000CAC(&_ftext, &_etext - &_ftext);
 	RegisterLibraryEntries(&loadcore_entry);
-	AllocSysMemory(2, 0x20c4, (void *)(0x1FFFFFFF << 2));
-	if (unk[4]) {
-		AllocSysMemory(2, unk[5], (void *)unk[4]);
-	}
-	unkb = __builtin_alloca(0xd00);
-	func_0000130C(unkb, unkb + 0xd00, 0x11111111);
 
-	if (QueryMemSize() >= unkb) {
-		AllocSysMemory(2, QueryMemSize() - ((u_int)unkb & (0x1FFFFFFF << 8)), unkb);
+	// Register the memory we occupy with sysmem
+	aligned_start = (void *)(((int)&_ftext >> 8) << 8);
+	AllocSysMemory(SMEM_Addr, &_end - aligned_start, (void *)((u_int)aligned_start & 0x1fffffff));
+	if (arg->load_base) {
+		// temporarily allocate the ioprp buffer
+		tmp_alloc = AllocSysMemory(SMEM_Addr, (u_int)arg->rp_size, arg->load_base);
+	}
+
+	// ???
+	sp1 = __builtin_alloca(0x10);
+	// sp2 = __builtin_alloca(0xdf0+010);
+	sp2 = sp1 - 0xe00;
+	lc_fill32((int)sp2 & 0x1fffff00, sp1 - 0xf0, 0x11111111);
+
+	// At this point our stack grows down from end of RAM, so use we can figure out
+	// the size to allocate the stack space by subtracting from QueryMemSize
+	if (QueryMemSize() < unkarr) {
+		AllocSysMemory(SMEM_Addr, QueryMemSize() - (u_int)sp2, sp2);
+	}
+
+	if (arg->arg) {
+		int len = lc_strlen(arg->arg) + 1;
+		argstr = __builtin_alloca(len);
+
+		lc_memmove(argstr, arg->arg, len);
+		bm[0] = BOOTMODE(5, 0, 1);
+		bm[1] = (u_int)argstr;
+		RegisterBootMode(bm);
+	}
+
+	mptr = __builtin_alloca((arg->mod_count + 1) * 4);
+	lc_memmove(mptr, arg->mod_data, (arg->mod_count + 1) * 4);
+
+	lc.rbn_ptr = __builtin_alloca(arg->mod_count * sizeof(*lc.rbn_ptr));
+
+	addr = QueryBlockTopAddress(0);
+	while (addr != -1) {
+		int BlockSize = QueryBlockSize(addr);
+
+		// shift + and, but how?
+		if (BlockSize < 0) {
+			lc_fill32(addr, addr + (BlockSize & 0x7FFFFFFF), 0x400D);
+		}
+
+		addr = QueryBlockTopAddress(addr + (BlockSize & 0x7fffffff));
+	}
+
+	mp = mptr;
+	while (mp) {
+		type = func_000014A0(mp, &info);
+		switch (type) {
+		case 1:
+			modalloc = AllocSysMemory(SMEM_Addr, info.memsz + info.vaddr, (void *)info.vaddr);
+			break;
+		case 3:
+			modalloc = AllocSysMemory(SMEM_Addr, info.memsz + info.vaddr, (void *)info.vaddr);
+			break;
+		case 4:
+			modalloc = AllocSysMemory(SMEM_Addr, info.memsz + 48, (void *)info.vaddr);
+			break;
+		}
+
+		if (modalloc) {
+			info.vaddr = (u_int)modalloc + 48;
+			func_0000169C((void *)info.vaddr, &info);
+			if (func_00000CAC((void *)info.vaddr, info.text_size) == 0) {
+				FlushIcache();
+				asm volatile("move $gp,%0 \n" : : "r"(info.gp));
+				ret = ((int (*)(int, int))info.entry)(0, 0);
+				if ((ret & 3) == 1) {
+					func_00000D68((void *)info.vaddr, info.text_size);
+					FreeSysMemory((void *)(((info.vaddr - 0x30) >> 8) << 8));
+					continue;
+				}
+
+				mod = info.vaddr - 48;
+				func_000007E0(mod);
+				mod->unkA = 3;
+				if ((ret & 3) == 2) {
+					mod->unkA = 19;
+				}
+
+				if (ret & ~3) {
+					func_0000073C((void *)(ret & ~3), 2, 0);
+				}
+
+			} else {
+				FreeSysMemory(modalloc);
+			}
+		}
+
+		mp++;
+	}
+
+	if (tmp_alloc) {
+		lc_fill32(tmp_alloc, tmp_alloc + arg->rp_size, 0x400D);
+		FreeSysMemory(tmp_alloc);
+	}
+
+	while (1) {
+		*(volatile char *)0x80000000 = 2;
 	}
 }
 
 #endif
+
+void
+func_0000067C()
+{
+}
 
 void
 RegisterBootMode(int *param)
@@ -824,7 +969,7 @@ func_000014A0(void *buf, struct exe_info *info)
 	elf_hdr = buf;
 	elf_phdr = buf + elf_hdr->e_phoff;
 	if (elf_hdr->e_ident[4] == 1 && elf_hdr->e_ident[5] == 1 && elf_hdr->e_machine == EM_MIPS &&
-	  elf_hdr->e_phentsize == 32 && elf_hdr->e_phnum == 2 && elf_phdr->p_type == 0x70000080 &&
+	  elf_hdr->e_phentsize == 32 && elf_hdr->e_phnum == 2 && elf_phdr[0].p_type == 0x70000080 &&
 	  (elf_hdr->e_type == 0xff80 || elf_hdr->e_type == 0xff81 || elf_hdr->e_type == 2)) {
 
 		if (elf_hdr->e_type == 0xff80 || elf_hdr->e_type == 0xff81) {
@@ -833,7 +978,7 @@ func_000014A0(void *buf, struct exe_info *info)
 			info->type = 3;
 		}
 
-		mod = buf + elf_phdr->p_offset;
+		mod = buf + elf_phdr[0].p_offset;
 
 		info->entry = mod->entry;
 		info->gp = mod->gp_value;
@@ -900,18 +1045,165 @@ func_00001734(struct exe_info *info, struct iop_mod *mod)
 	mod->bss_size = info->bss_size;
 }
 
-// load coff
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000017C4);
+// load ecoff
+void
+func_000017C4(void *buf)
+{
+	struct coff_fhdr *hdr;
+	struct coff_opthdr *opt;
+	struct coff_shdr *shdr;
+	void *scn;
+
+	hdr = buf;
+	opt = (struct coff_opthdr *)&hdr[1];
+	shdr = (struct coff_shdr *)&opt[1];
+
+	scn = buf + shdr[0].s_scnptr;
+	lc_memcpy32(scn, (void *)opt->text_start, opt->tsize);
+	lc_memcpy32(scn + opt->tsize, (void *)opt->data_start, opt->dsize);
+	if (opt->bss_start && opt->bsize) {
+		lc_memzero32((void *)opt->bss_start, opt->bsize >> 2);
+	}
+}
 
 // load static elf
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001844);
+void
+func_00001844(void *buf)
+{
+	Elf32_Ehdr *ehdr;
+	Elf32_Phdr *phdr;
+
+	ehdr = buf;
+	phdr = buf + ehdr->e_phoff;
+
+	lc_memcpy32(buf + phdr[1].p_offset, (void *)phdr[1].p_vaddr, phdr[1].p_filesz);
+	if (phdr[1].p_memsz > phdr[1].p_filesz) {
+		lc_memzero32((void *)phdr[1].p_vaddr + phdr[1].p_filesz,
+		  (phdr[1].p_memsz - phdr[1].p_filesz) >> 2);
+	}
+}
 
 // load relocatable elf
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000018A8);
+// INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_000018A8);
+void
+func_000018A8(void *buf, struct exe_info *info)
+{
+	Elf32_Ehdr *ehdr;
+	Elf32_Phdr *phdr;
+	Elf32_Shdr *shdr;
+	int vaddr;
+	int i;
 
+	vaddr = info->vaddr;
+
+	ehdr = buf;
+	phdr = buf + ehdr->e_phoff;
+	shdr = buf + ehdr->e_shoff;
+
+	info->entry += vaddr;
+	info->gp += vaddr;
+
+	if (info->modinfo + 1 != 0) {
+		info->modinfo += (u_int)vaddr;
+	}
+
+	lc_memcpy32(buf + phdr[1].p_offset, (void *)info->vaddr, phdr[1].p_filesz);
+	if (phdr[1].p_memsz > phdr[1].p_filesz) {
+		lc_memzero32((void *)info->vaddr + phdr[1].p_filesz,
+		  (phdr[1].p_memsz - phdr[1].p_filesz) >> 2);
+	}
+
+	for (i = 1; i < ehdr->e_shnum; i++) {
+		if (shdr[i].sh_type == SHT_REL) {
+			func_00001A04((void *)vaddr, (void *)shdr[i].sh_offset + (int)buf,
+			  shdr[i].sh_size / shdr[i].sh_entsize, shdr[(shdr[i].sh_info)].sh_addr,
+			  shdr[(shdr[i].sh_info)].sh_size);
+		}
+	}
+}
+
+#if 1
 INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001A04);
+#else
+// apply_elf_rel_section
+void
+func_00001A04(void *buf, Elf32_Rel *rel, int count, int sh_addr, int sh_size)
+{
+	u_int base, fixed;
+	u_int *roffset;
+	int insn;
+	int disp;
+	int i;
 
-INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", func_00001B98);
+	base = (u_int)buf;
+
+	// A = addend (relocated field holds addend in Rel sections)
+	// P = address of the field being relocated
+
+	for (i = 0; i < count; i++, rel++) {
+		roffset = buf + rel->r_offset;
+
+		switch (ELF32_R_TYPE(rel->r_info)) {
+		case R_MIPS_NONE:
+			break;
+		case R_MIPS_16:
+			// S + sign-extend(A)
+
+			fixed = (((int)*roffset << 16) >> 16) + base;
+
+			*roffset &= 0xffff0000;
+			*roffset |= fixed & 0xffff;
+
+			break;
+		case R_MIPS_32:
+			// S + A
+			*roffset += base;
+			break;
+		case R_MIPS_26:
+			// (((A << 2) | (P & 0xf0000000) + S) >> 2
+
+			fixed = (*roffset & 0x03ffffff << 2);
+			fixed |= (u_int)roffset & 0xf0000000;
+			fixed += base;
+
+			*roffset &= 0xfc000000;
+			// bugged attempt to sign extend?
+			// these are u_int
+			*roffset |= ((fixed << 4) >> 4) >> 2;
+			break;
+		case R_MIPS_HI16:
+			//((AHL + S) – (short)(AHL + S)) >> 16
+			insn = *roffset & 0xffff0000;
+			disp = (*roffset & 0x0000ffff) << 16;
+			*roffset = insn | ((disp + base) >> 16);
+			break;
+		case R_MIPS_LO16:
+			// AHL + S
+			insn = *roffset & 0xffff0000;
+			disp = (short)*roffset & 0x0000ffff;
+			*roffset = insn | (disp + base);
+			break;
+		case 0xfa: // R_MIPSSCE_MHI16 and R_MIPSSCE_ADDEND
+			break;
+		default:
+			break;
+		}
+	}
+}
+#endif
+
+// should maybe call this something else to draw attention to the weird arg order
+void
+lc_memcpy32(void *src, void *dst, u_int size)
+{
+	u_int *rp = src;
+	u_int *wp = dst;
+	u_int *end = &rp[size >> 2];
+
+	while (rp < end) {
+		*wp++ = *rp++;
+	}
+}
 
 void
 lc_memzero32(void *p, int len)

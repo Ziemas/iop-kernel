@@ -18,7 +18,7 @@ struct coff_opthdr {
 	short vstamp;
 	u_int tsize;
 	u_int dsize;
-	u_int bsize;
+	int bsize;
 	u_int entry;
 	u_int text_start;
 	u_int data_start;

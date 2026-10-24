@@ -1,2 +1,3 @@
-ftext = 0;
-etext = 0x1f20;
+_ftext = 0;
+_etext = 0x1f20;
+_end = 0x1fc4;

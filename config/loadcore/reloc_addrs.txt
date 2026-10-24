@@ -1,2 +1,11 @@
-rom:0x158 symbol:etext reloc:MIPS_HI16
-rom:0x15c symbol:etext reloc:MIPS_LO16
+rom:0x144 symbol:_ftext-0x30 reloc:MIPS_HI16
+rom:0x148 symbol:_ftext-0x30 reloc:MIPS_LO16
+
+rom:0x158 symbol:_etext reloc:MIPS_HI16
+rom:0x15c symbol:_etext reloc:MIPS_LO16
+
+rom:0x1b4 symbol:_end reloc:MIPS_HI16
+rom:0x1b8 symbol:_end reloc:MIPS_LO16
+
+rom:0x668 symbol:none reloc:MIPS_NONE
+rom:0x670 symbol:none reloc:MIPS_NONE

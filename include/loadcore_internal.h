@@ -42,7 +42,7 @@ struct exe_info {
 	int type;
 	int entry;
 	int gp;
-	int vaddr;
+	u_int vaddr;
 	int text_size;
 	int data_size;
 	int bss_size;
