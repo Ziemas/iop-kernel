@@ -80,6 +80,10 @@ PROB_KEEP_REPLACED_VAR = 0.2
 # Change the return type of an external function to void with this probability.
 PROB_RET_VOID = 0.2
 
+# When wrapping a range of statements in an `if (variable)` statement, probability
+# of generating `if (variable1 || variable2)`.
+PROB_VAR_COND_BLOCK_OR = 0.25
+
 # Number larger than any node index. (If you're trying to compile a 1 GB large
 # C file to matching asm, you have bigger problems than this limit.)
 MAX_INDEX = 10**9
@@ -261,6 +265,21 @@ def find_var_reads(top_node: ca.Node) -> List[ca.ID]:
 
     Visitor().visit(top_node)
     return ret
+
+
+def get_mentioned_names(fn: ca.FuncDef, region: Region) -> List[str]:
+    names: List[str] = []
+
+    class IdVisitor(ca.NodeVisitor):
+        def visit_ID(self, node: ca.ID) -> None:
+            if region.contains_node(node):
+                names.append(node.name)
+
+        def visit_StructRef(self, node: ca.StructRef) -> None:
+            self.visit(node.name)
+
+    IdVisitor().visit(fn)
+    return names
 
 
 def visit_replace(top_node: ca.Node, callback: Callable[[ca.Node, bool], Any]) -> None:
@@ -884,17 +903,7 @@ def perm_randomize_internal_type(
     """Randomize types of pre-existing local variables. Function parameters
     are not included -- those are handled by perm_randomize_function_type.
     Only variables mentioned within the given region are affected."""
-    names: Set[str] = set()
-
-    class IdVisitor(ca.NodeVisitor):
-        def visit_ID(self, node: ca.ID) -> None:
-            if region.contains_node(node):
-                names.add(node.name)
-
-        def visit_StructRef(self, node: ca.StructRef) -> None:
-            self.visit(node.name)
-
-    IdVisitor().visit(fn)
+    names = set(get_mentioned_names(fn, region))
 
     typemap = build_typemap(ast, fn)
     decls: List[ca.Decl] = []
@@ -919,18 +928,7 @@ def perm_randomize_external_type(
 ) -> None:
     """Randomize types of global variables. Only variables mentioned within the
     given region are affected."""
-    names: List[str] = []
-
-    class IdVisitor(ca.NodeVisitor):
-        def visit_ID(self, node: ca.ID) -> None:
-            if region.contains_node(node):
-                names.append(node.name)
-
-        def visit_StructRef(self, node: ca.StructRef) -> None:
-            self.visit(node.name)
-
-    IdVisitor().visit(fn)
-
+    names = get_mentioned_names(fn, region)
     ensure(names)
     name = random.choice(dedup(names))
     decls: List[Tuple[ca.Decl, int]] = []
@@ -1315,6 +1313,38 @@ def perm_condition(
             ],
         )
         node.cond = ca.BinaryOp(op, expr, zero)
+
+def perm_reverse_cond(
+    fn: ca.FuncDef, ast: ca.FileAST, indices: Indices, region: Region, random: Random
+) -> None:
+    """Change if(x) y else z; into if(!x) z else y;. Includes ternary operators."""
+    cands: List[Union[ca.If, ca.TernaryOp]] = []
+
+    class Visitor(ca.NodeVisitor):
+        def visit_If(self, node: ca.If) -> None:
+            if node.iffalse:  # Must have an else.
+                cands.append(node)
+            self.generic_visit(node)
+
+        def visit_TernaryOp(self, node: ca.TernaryOp) -> None:
+            cands.append(node)
+            self.generic_visit(node)
+
+    Visitor().visit(fn.body)
+    ensure(cands)
+    node = random.choice(cands)
+    if not node.cond:
+        raise RandomizationFailure
+
+    if isinstance(node.cond, ca.UnaryOp) and node.cond.op == "!":
+        ensure(not isinstance(node.cond.expr, ca.Typename))
+        node.cond = node.cond.expr
+    else:
+        node.cond = ca.UnaryOp("!", node.cond)
+
+    tmp = node.iftrue
+    node.iftrue = node.iffalse
+    node.iffalse = tmp
 
 
 def perm_add_self_assignment(
@@ -2067,6 +2097,7 @@ def perm_remove_ast(
     cands: List[Tuple[ca.Node, ca.Node]] = []
 
     class Visitor(ca.NodeVisitor):
+        # Replace (type)(x) with (x)
         def visit_Cast(self, node: ca.Cast) -> None:
             if region.contains_node(node):
                 cands.append((node, node.expr))
@@ -2401,6 +2432,193 @@ def perm_inline(
     ast.ext.insert(ast.ext.index(fn), fn_def)
 
 
+def perm_var_cond_block(
+    fn: ca.FuncDef, ast: ca.FileAST, indices: Indices, region: Region, random: Random
+) -> None:
+    """Wrap a random range of statements within `if (variable) { ... }` or
+    `if (struct.member)` and duplicate them in the else block. This can force
+    the compiler to emit a useless move.
+    Control flow can have remote effects, so this mostly ignores the region
+    restriction."""
+    cands: List[Block] = []
+
+    def rec(block: Block) -> None:
+        cands.append(block)
+        for stmt in ast_util.get_block_stmts(block, False):
+            ast_util.for_nested_blocks(stmt, rec)
+
+    rec(fn.body)
+    block = random.choice(cands)
+    stmts = ast_util.get_block_stmts(block, True)
+
+    # Split the statements into streaks of simple statements that can be duplicated.
+    streaks: List[Tuple[int, int]] = []
+    streak_start = 0
+    for i, stmt in enumerate(stmts):
+        if isinstance(
+            stmt,
+            (
+                ca.If,
+                ca.For,
+                ca.While,
+                ca.DoWhile,
+                ca.Switch,
+                ca.Label,
+                ca.Case,
+                ca.Default,
+                ca.Compound,
+                ca.Decl,
+                ca.Typedef,
+                ca.Pragma,
+            ),
+        ):
+            streaks.append((streak_start, i))
+            streak_start = i + 1
+    streaks.append((streak_start, len(stmts)))
+    streaks = [(i, j) for i, j in streaks if i != j]
+
+    ensure(streaks)
+    lo, hi = random.choice(streaks)
+
+    new_block = ca.Compound(block_items=stmts[lo:hi])
+
+    cand_exprs: List[Expression] = [
+        expr
+        for expr in get_block_expressions(fn.body, region)
+        if isinstance(expr, (ca.StructRef, ca.ID))
+    ]
+    ensure(cand_exprs)
+    expr = random.choice(cand_exprs)
+    ensure(not ast_util.is_effectful(expr))
+    typemap = build_typemap(ast, fn)
+
+    def make_cond(expr: Expression) -> Expression:
+        type: Type = resolve_typedefs(decayed_expr_type(expr, typemap), typemap)
+        if isinstance(type, ca.TypeDecl) and isinstance(
+            type.type, (ca.Struct, ca.Union)
+        ):
+            expr = ca.UnaryOp("&", expr)
+        return copy.deepcopy(expr)
+
+    cond = make_cond(expr)
+
+    # `if (variable1 || variable2)` seems to help sometimes.
+    if random_bool(random, PROB_VAR_COND_BLOCK_OR):
+        cand_exprs = [e for e in cand_exprs if not ast_util.equal_ast(e, expr)]
+        ensure(cand_exprs)
+        expr2 = random.choice(cand_exprs)
+        if not ast_util.is_effectful(expr2):
+            cond = ca.BinaryOp("||", cond, make_cond(expr2))
+
+    stmts[lo:hi] = [
+        ca.If(cond=cond, iftrue=new_block, iffalse=copy.deepcopy(new_block))
+    ]
+
+
+def perm_alias_array(
+    fn: ca.FuncDef, ast: ca.FileAST, indices: Indices, region: Region, random: Random
+) -> None:
+    """Replace two same-type variables by an array."""
+    mentioned_names = set(get_mentioned_names(fn, region))
+    typemap = build_typemap(ast, fn)
+    cands_by_type: List[Tuple[Type, List[Tuple[int, ca.Decl]]]] = []
+    all_names = set()
+
+    stmts = ast_util.get_block_stmts(fn.body, False)
+    for i, decl in enumerate(stmts):
+        if not isinstance(decl, ca.Decl) or not decl.name:
+            continue
+        all_names.add(decl.name)
+        if decl.init or decl.name not in mentioned_names:
+            continue
+        tp = get_decl_type(decl)
+        real_type = resolve_typedefs(tp, typemap)
+        if isinstance(real_type, ca.ArrayDecl):
+            continue
+        for t, arr in cands_by_type:
+            if same_type(t, tp, typemap, allow_similar=True):
+                break
+        else:
+            arr = []
+            cands_by_type.append((tp, arr))
+        arr.append((i, decl))
+
+    cands = [(tp, decls) for tp, decls in cands_by_type if len(decls) >= 2]
+    ensure(cands)
+    tp, decls = random.choice(cands)
+    (i1, decl1), (i2, decl2) = random.sample(decls, 2)
+    assert decl1.name
+    assert decl2.name
+    array_ind = {
+        decl1.name: 0,
+        decl2.name: 1,
+    }
+
+    var = "new_var"
+    counter = 1
+    while var in all_names:
+        counter += 1
+        var = f"new_var{counter}"
+    arr_tp = ca.ArrayDecl(tp, ca.Constant("int", "2"), [])
+    stmts[min(i1, i2)] = ast_util.make_decl(var, arr_tp)
+    del stmts[max(i1, i2)]
+
+    def callback(node: ca.Node, is_expr: bool) -> Optional[ca.Node]:
+        if not isinstance(node, ca.ID) or node.name not in array_ind:
+            return None
+        return ca.ArrayRef(ca.ID(var), ca.Constant("int", str(array_ind[node.name])))
+
+    visit_replace(fn.body, callback)
+
+
+def perm_remove_var(
+    fn: ca.FuncDef, ast: ca.FileAST, indices: Indices, region: Region, random: Random
+) -> None:
+    """Remove a variable, replacing all its instances with
+    a randomly chosen variable of similar type."""
+    mentioned_names = set(get_mentioned_names(fn, region))
+    typemap = build_typemap(ast, fn)
+    cands_by_type: List[Tuple[Type, List[Tuple[int, str]]]] = []
+
+    def add_cand(tp: Type, stmt_idx: int, name: str) -> None:
+        for t, arr in cands_by_type:
+            if same_type(t, tp, typemap, allow_similar=True):
+                break
+        else:
+            arr = []
+            cands_by_type.append((tp, arr))
+        arr.append((stmt_idx, name))
+
+    stmts = ast_util.get_block_stmts(fn.body, False)
+    for i, decl in enumerate(stmts):
+        if isinstance(decl, ca.Decl) and decl.name:
+            if decl.name not in mentioned_names:
+                continue
+            tp = get_decl_type(decl)
+            add_cand(tp, i, decl.name)
+
+    assert isinstance(fn.decl.type, ca.FuncDecl)
+    if fn.decl.type.args is not None:
+        for param in fn.decl.type.args.params:
+            if isinstance(param, ca.Decl) and param.name:
+                add_cand(get_decl_type(param), -1, param.name)
+
+    cands = [(tp, names) for tp, names in cands_by_type if len(names) >= 2]
+    ensure(cands)
+    tp, names = random.choice(cands)
+    (i1, name1), (i2, name2) = random.sample(names, 2)
+
+    ensure(i1 != -1)
+    del stmts[i1]
+
+    def callback(node: ca.Node, is_expr: bool) -> Optional[ca.Node]:
+        if not isinstance(node, ca.ID) or node.name != name1:
+            return None
+        return ca.ID(name2)
+
+    visit_replace(fn.body, callback)
+
+
 RandomizationPass = Callable[[ca.FuncDef, ca.FileAST, Indices, Region, Random], None]
 
 RANDOMIZATION_PASSES: List[RandomizationPass] = [
@@ -2437,6 +2655,10 @@ RANDOMIZATION_PASSES: List[RandomizationPass] = [
     perm_long_chain_assignment,
     perm_pad_var_decl,
     perm_inline,
+    perm_var_cond_block,
+    perm_alias_array,
+    perm_remove_var,
+    perm_reverse_cond,
 ]
 
 
