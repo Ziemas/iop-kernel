@@ -85,6 +85,7 @@ void func_00001734(struct exe_info *info, struct iop_mod *mod);
 void func_000017C4(void *buf);
 void func_00001844(void *buf);
 void func_000018A8(void *buf, struct exe_info *info);
+// TODO when when we figure out which args
 void func_00001A04();
 void lc_fill32(void *start, void *end, u_int val);
 
@@ -119,183 +120,258 @@ INCLUDE_ASM("asm/loadcore/nonmatchings/loadcore", loadcore_main);
 void
 loadcore_main(u_int *in)
 {
-	struct boot_arg arg_st;
-	struct loadcore *core;
+	int BlockSize, free;
+	void *stack_high, *stack_low;
+	void *addr;
+	char *argstr;
+	void *fixaddr;
+	struct reboot_notify *rbn;
+	struct reboot_notify *rbnp;
 	struct iop_mod *sysmem_mod;
 	struct iop_mod *lc_mod;
 	struct iop_mod *mod;
-	struct boot_arg *arg;
-	int bm[2];
-	int i;
-	u_int unk[8];
-	void *unkb;
-	u_int unkarr[0xd0];
-	char arg_copy[8];
-	void *mptr;
-	int v8;
-	int v10;
-	void *mp;
-	int type;
-	struct exe_info info;
-	void *modalloc;
 	int ret;
-	void *aligned_start;
-	void *tmp_alloc;
-	void *sp1, *sp2;
-	char *argstr;
-	void *addr;
+	void **mp;
+	void **mptr;
 
-	arg = &arg_st;
+	// Genuinely seems to be the only way this works?
+	struct {
+		struct exe_info info;
 
-	arg->memsize = in[0];
-	arg->mode = in[1];
-	arg->arg = in[2];
-	arg->load_base = in[3];
-	arg->rp_buf = in[4];
-	arg->rp_size = in[5];
-	arg->mod_count = in[6];
-	arg->mod_data = in[7];
+		int unk;
 
-	// arg = *_arg;
+		u_int memsize;
+		u_int mode;
+		void *arg;
+		void *load_base;
+		void *rp_buf;
+		u_int rp_size;
+		int mod_count;
+		void **mod_data;
 
-	lc.lib = arg->arg;
+		int i;
+	} stack;
+
+	stack.memsize = in[0];
+	stack.mode = in[1];
+	stack.arg = in[2];
+	stack.load_base = in[3];
+	stack.rp_buf = in[4];
+	stack.rp_size = in[5];
+	stack.mod_count = in[6];
+	stack.mod_data = in[7];
+
+	lc.intr_func = NULL;
+	lc.lib = stack.load_base;
 
 	*(u_int **)0x3f0 = bootmodes;
 	*(u_int **)0x3f4 = bootmodes;
 
-	lc.intr_func = NULL;
-	lc.unk4 = arg->arg;
+	lc.unk4 = stack.load_base;
+	lc.lib->next = 0;
 	lc.mod_count = 2;
 	lc.unk8.unk0 = 0;
 	lc.unk8.unk4 = 0;
 	lc.next_id = 3;
 
-	for (i = 0; i < 17; i++) {
-		bootmodes[i] = 0;
+	stack.i = 0;
+	while (stack.i < 17) {
+		bootmodes[stack.i++] = 0;
 	}
 
-	bm[0] = BOOTMODE(4, arg->mode, 0);
-	RegisterBootMode(bm);
+	stack.i = BOOTMODE(4, stack.mode & 0xffff, 0);
+	RegisterBootMode(&stack.i);
+
+	lc.modlist = (void *)(lc.unk4 - 0x30);
 
 	// the iop_mod struct precedes the module .text
 	lc_mod = &_ftext - 0x30;
-	sysmem_mod = (struct iop_mod *)lc.unk4 - 0x30;
-	lc.modlist = lc_mod;
 
+	sysmem_mod = lc.modlist;
 	sysmem_mod->id = 1;
 	sysmem_mod->unkA = 3;
 	sysmem_mod->next = lc_mod;
 	lc_mod->id = 2;
 	lc_mod->unkA = 3;
 
-	// scan our text section for imports to resolve
 	func_00000CAC(&_ftext, &_etext - &_ftext);
 	RegisterLibraryEntries(&loadcore_entry);
 
 	// Register the memory we occupy with sysmem
-	aligned_start = (void *)(((int)&_ftext >> 8) << 8);
-	AllocSysMemory(SMEM_Addr, &_end - aligned_start, (void *)((u_int)aligned_start & 0x1fffffff));
-	if (arg->load_base) {
+
+	AllocSysMemory(SMEM_Addr, &_end - (void *)((u_int)(((int)&_ftext - 0x30 >> 8) << 8)),
+	  (void *)((u_int)(((int)&_ftext - 0x30 >> 8) << 8) & 0x1fffffff));
+
+	if (stack.rp_buf) {
 		// temporarily allocate the ioprp buffer
-		tmp_alloc = AllocSysMemory(SMEM_Addr, (u_int)arg->rp_size, arg->load_base);
+		stack.rp_buf = AllocSysMemory(SMEM_Addr, (u_int)stack.rp_size, stack.rp_buf);
 	}
 
-	// ???
-	sp1 = __builtin_alloca(0x10);
-	// sp2 = __builtin_alloca(0xdf0+010);
-	sp2 = sp1 - 0xe00;
-	lc_fill32((int)sp2 & 0x1fffff00, sp1 - 0xf0, 0x11111111);
+	stack_high = __builtin_alloca(0x10);
+	stack_low = stack_high - 0xe00;
+	stack_low = (void *)((u_int)(stack_low) & 0x1fffff00);
+	lc_fill32(stack_low, stack_high - 0x100, 0x11111111);
 
 	// At this point our stack grows down from end of RAM, so use we can figure out
-	// the size to allocate the stack space by subtracting from QueryMemSize
-	if (QueryMemSize() < unkarr) {
-		AllocSysMemory(SMEM_Addr, QueryMemSize() - (u_int)sp2, sp2);
+	// the size to allocate by subtracting from QueryMemSize
+	if (stack_low < QueryMemSize()) {
+		AllocSysMemory(SMEM_Addr, QueryMemSize() - (u_int)stack_low, stack_low);
 	}
 
-	if (arg->arg) {
-		int len = lc_strlen(arg->arg) + 1;
-		argstr = __builtin_alloca(len);
+	if (stack.arg) {
+		int *bm;
+		int len = lc_strlen(stack.arg);
+		argstr = __builtin_alloca(len + 9);
 
-		lc_memmove(argstr, arg->arg, len);
+		lc_memmove(argstr + 8, stack.arg, len + 1);
+		stack.arg = argstr + 8;
+		bm = (void *)argstr;
 		bm[0] = BOOTMODE(5, 0, 1);
-		bm[1] = (u_int)argstr;
+		bm[1] = (u_int)argstr + 8;
 		RegisterBootMode(bm);
 	}
 
-	mptr = __builtin_alloca((arg->mod_count + 1) * 4);
-	lc_memmove(mptr, arg->mod_data, (arg->mod_count + 1) * 4);
+	mptr = __builtin_alloca((stack.mod_count + 1) * 4);
+	lc_memmove(mptr, stack.mod_data, (stack.mod_count + 1) * 4);
+	stack.mod_data = mptr;
 
-	lc.rbn_ptr = __builtin_alloca(arg->mod_count * sizeof(*lc.rbn_ptr));
+	rbn = __builtin_alloca(stack.mod_count * sizeof(*lc.rbn_ptr));
+	lc.rbn_ptr = rbn;
 
 	addr = QueryBlockTopAddress(0);
 	while (addr != -1) {
-		int BlockSize = QueryBlockSize(addr);
+		addr = (void *)((u_int)addr & 0x7fffffff);
 
-		// shift + and, but how?
-		if (BlockSize < 0) {
-			lc_fill32(addr, addr + (BlockSize & 0x7FFFFFFF), 0x400D);
+		BlockSize = QueryBlockSize(addr);
+
+		free = BlockSize >> 31;
+		BlockSize &= 0x7fffffff;
+
+		if (free) {
+			lc_fill32(addr, addr + BlockSize, 0x400D);
 		}
 
-		addr = QueryBlockTopAddress(addr + (BlockSize & 0x7fffffff));
+		addr = QueryBlockTopAddress(addr + BlockSize);
 	}
 
-	mp = mptr;
-	while (mp) {
-		type = func_000014A0(mp, &info);
-		switch (type) {
-		case 1:
-			modalloc = AllocSysMemory(SMEM_Addr, info.memsz + info.vaddr, (void *)info.vaddr);
-			break;
-		case 3:
-			modalloc = AllocSysMemory(SMEM_Addr, info.memsz + info.vaddr, (void *)info.vaddr);
-			break;
-		case 4:
-			modalloc = AllocSysMemory(SMEM_Addr, info.memsz + 48, (void *)info.vaddr);
-			break;
+	mp = stack.mod_data;
+	rbn[0].hnd = 0;
+	stack.i = -1;
+	mp = stack.mod_data;
+
+	if (mp[2]) {
+		mp = &mp[2];
+
+		do {
+			if ((u_int)(*mp) & 1) {
+				if (((u_int)(*mp) & 0xf) == 1) {
+					fixaddr = (void *)(((u_int)*mp) >> 2);
+				}
+
+				mp++;
+				continue;
+			}
+
+			stack.i = (stack.i + 1) & 0xf;
+			switch (func_000014A0(*mp, &stack.info)) {
+			case 1:
+			case 3:
+				if (AllocSysMemory(SMEM_Addr,
+					  stack.info.memsz + stack.info.vaddr -
+						(((unsigned int)(stack.info.vaddr - 48) >> 8 << 8) & 0x1FFFFFFF),
+					  (void *)(((unsigned int)(stack.info.vaddr - 48) >> 8 << 8) & 0x1FFFFFFF)) ==
+				  0) {
+					goto error;
+				}
+				break;
+
+			case 2:
+			case 4:
+				if (!fixaddr) {
+					stack.info.vaddr = (u_int)AllocSysMemory(SMEM_Low, stack.info.memsz + 48, NULL);
+				} else {
+					stack.info.vaddr = (u_int)AllocSysMemory(SMEM_Addr, stack.info.memsz + 48,
+					  fixaddr);
+				}
+				break;
+			default:
+				goto error;
+			}
+
+			if (!stack.info.vaddr) {
+				goto error;
+			}
+
+			stack.info.vaddr = (u_int)stack.info.vaddr + 48;
+			func_0000169C(*mp, &stack.info);
+			if (func_00000CAC((void *)stack.info.vaddr, stack.info.text_size) == 0) {
+				FlushIcache();
+				asm volatile("move $gp,%0 \n" : : "r"(stack.info.gp));
+				ret = ((int (*)(int, int, int, int))stack.info.entry)(0, 0, (int)mp, 0);
+				if ((ret & 3) == 1) {
+					func_00000D68((void *)stack.info.vaddr, stack.info.text_size);
+					FreeSysMemory((void *)(((stack.info.vaddr - 0x30) >> 8) << 8));
+				}
+			} else {
+				FreeSysMemory((void *)(((stack.info.vaddr - 0x30) >> 8) << 8));
+			}
+
+			mod = (struct iop_mod *)(stack.info.vaddr - 48);
+			func_000007E0(mod);
+			mod->unkA = 3;
+			if ((ret & 3) == 2) {
+				mod->unkA = 19;
+			}
+
+			if (ret & ~3) {
+				func_0000073C((void *)(ret & ~3), 2, 0);
+			}
+
+			mod = NULL;
+		} while (*mp);
+	}
+
+	if (stack.rp_buf) {
+		lc_fill32(stack.rp_buf, stack.rp_buf + stack.rp_size, 0x400D);
+		FreeSysMemory(stack.rp_buf);
+	}
+
+	for (stack.i = 0; stack.i < 4; stack.i++) {
+		if (stack.i == 3) {
+			lc.rbn_ptr = NULL;
 		}
 
-		if (modalloc) {
-			info.vaddr = (u_int)modalloc + 48;
-			func_0000169C((void *)info.vaddr, &info);
-			if (func_00000CAC((void *)info.vaddr, info.text_size) == 0) {
-				FlushIcache();
-				asm volatile("move $gp,%0 \n" : : "r"(info.gp));
-				ret = ((int (*)(int, int))info.entry)(0, 0);
-				if ((ret & 3) == 1) {
-					func_00000D68((void *)info.vaddr, info.text_size);
-					FreeSysMemory((void *)(((info.vaddr - 0x30) >> 8) << 8));
-					continue;
+		rbnp = rbn;
+		while (rbnp->hnd) {
+			if (((int)rbnp->hnd & 3) == stack.i) {
+				asm volatile("move $gp,%0 \n" : : "r"(rbnp->gp));
+				if (stack.i == 3) {
+					((int (*)())(rbnp->hnd & ~3))(rbnp, 1);
+				} else {
+					((int (*)())(rbnp->hnd & ~3))(&stack.mode, 1);
+				}
+			}
+
+			rbnp++;
+		}
+
+		if (stack.i == 2) {
+			while (rbn < rbnp) {
+				rbnp--;
+				if ((rbnp->hnd & 3) == 3) {
+					break;
 				}
 
-				mod = info.vaddr - 48;
-				func_000007E0(mod);
-				mod->unkA = 3;
-				if ((ret & 3) == 2) {
-					mod->unkA = 19;
-				}
-
-				if (ret & ~3) {
-					func_0000073C((void *)(ret & ~3), 2, 0);
-				}
-
-			} else {
-				FreeSysMemory(modalloc);
+				rbnp->hnd = 0;
 			}
 		}
-
-		mp++;
 	}
 
-	if (tmp_alloc) {
-		lc_fill32(tmp_alloc, tmp_alloc + arg->rp_size, 0x400D);
-		FreeSysMemory(tmp_alloc);
-	}
-
+error:
 	while (1) {
 		*(volatile char *)0x80000000 = 2;
 	}
 }
-
 #endif
 
 void
