@@ -132,7 +132,9 @@ loadcore_main(u_int *in)
 	struct iop_mod *mod;
 	int ret;
 	void **mp;
+	int *bm;
 	void **mptr;
+	int len;
 
 	// Genuinely seems to be the only way this works?
 	struct {
@@ -161,13 +163,14 @@ loadcore_main(u_int *in)
 	stack.mod_count = in[6];
 	stack.mod_data = in[7];
 
+	*(volatile u_int **)0x3f0 = bootmodes;
+	*(volatile u_int **)0x3f4 = bootmodes;
+
 	lc.intr_func = NULL;
 	lc.lib = stack.load_base;
 
-	*(u_int **)0x3f0 = bootmodes;
-	*(u_int **)0x3f4 = bootmodes;
-
 	lc.unk4 = stack.load_base;
+
 	lc.lib->next = 0;
 	lc.mod_count = 2;
 	lc.unk8.unk0 = 0;
@@ -215,12 +218,16 @@ loadcore_main(u_int *in)
 	// At this point our stack grows down from end of RAM, so use we can figure out
 	// the size to allocate by subtracting from QueryMemSize
 	if (stack_low < QueryMemSize()) {
-		AllocSysMemory(SMEM_Addr, QueryMemSize() - (u_int)stack_low, stack_low);
+		// hack
+		if (rbnp) {
+			AllocSysMemory(2, QueryMemSize() - ((u_int)stack_low), stack_low);
+		} else {
+			AllocSysMemory(2, QueryMemSize() - ((u_int)stack_low), stack_low);
+		}
 	}
 
 	if (stack.arg) {
-		int *bm;
-		int len = lc_strlen(stack.arg);
+		len = lc_strlen(stack.arg);
 		argstr = __builtin_alloca(len + 9);
 
 		lc_memmove(argstr + 8, stack.arg, len + 1);
@@ -254,16 +261,16 @@ loadcore_main(u_int *in)
 		addr = QueryBlockTopAddress(addr + BlockSize);
 	}
 
+	fixaddr = 0;
 	mp = stack.mod_data;
 	rbn[0].hnd = 0;
 	stack.i = -1;
-	mp = stack.mod_data;
 
 	if (mp[2]) {
 		mp = &mp[2];
 
 		do {
-			if ((u_int)(*mp) & 1) {
+			if (((u_int)(*mp) & 1)) {
 				if (((u_int)(*mp) & 0xf) == 1) {
 					fixaddr = (void *)(((u_int)*mp) >> 2);
 				}
@@ -275,15 +282,15 @@ loadcore_main(u_int *in)
 			stack.i = (stack.i + 1) & 0xf;
 			switch (func_000014A0(*mp, &stack.info)) {
 			case 1:
-			case 3:
-				if (AllocSysMemory(SMEM_Addr,
-					  stack.info.memsz + stack.info.vaddr -
-						(((unsigned int)(stack.info.vaddr - 48) >> 8 << 8) & 0x1FFFFFFF),
-					  (void *)(((unsigned int)(stack.info.vaddr - 48) >> 8 << 8) & 0x1FFFFFFF)) ==
-				  0) {
+			case 3: {
+				u_int v = ((unsigned int)(stack.info.vaddr - 48) >> 8 << 8) & 0x1fffffff;
+
+				if (AllocSysMemory(SMEM_Addr, stack.info.memsz + stack.info.vaddr - v,
+					  (void *)(v)) == 0) {
 					goto error;
 				}
-				break;
+
+			} break;
 
 			case 2:
 			case 4:
@@ -293,32 +300,35 @@ loadcore_main(u_int *in)
 					stack.info.vaddr = (u_int)AllocSysMemory(SMEM_Addr, stack.info.memsz + 48,
 					  fixaddr);
 				}
+				if (!stack.info.vaddr) {
+					goto error;
+				}
+
+				stack.info.vaddr = (u_int)stack.info.vaddr + 48;
 				break;
 			default:
 				goto error;
 			}
 
-			if (!stack.info.vaddr) {
-				goto error;
+			func_0000169C(*mp, &stack.info);
+			if (func_00000CAC((void *)stack.info.vaddr, stack.info.text_size)) {
+				FreeSysMemory((void *)(((stack.info.vaddr - 0x30) >> 8) << 8));
+				goto next;
 			}
 
-			stack.info.vaddr = (u_int)stack.info.vaddr + 48;
-			func_0000169C(*mp, &stack.info);
-			if (func_00000CAC((void *)stack.info.vaddr, stack.info.text_size) == 0) {
-				FlushIcache();
-				asm volatile("move $gp,%0 \n" : : "r"(stack.info.gp));
-				ret = ((int (*)(int, int, int, int))stack.info.entry)(0, 0, (int)mp, 0);
-				if ((ret & 3) == 1) {
-					func_00000D68((void *)stack.info.vaddr, stack.info.text_size);
-					FreeSysMemory((void *)(((stack.info.vaddr - 0x30) >> 8) << 8));
-				}
-			} else {
+			FlushIcache();
+			asm volatile("move $gp,%0 \n" : : "r"(stack.info.gp));
+			ret = ((int (*)(int, int, int, int))stack.info.entry)(0, 0, (int)mp, 0);
+			if ((ret & 3) == 1) {
+				func_00000D68((void *)stack.info.vaddr, stack.info.text_size);
 				FreeSysMemory((void *)(((stack.info.vaddr - 0x30) >> 8) << 8));
+				goto next;
 			}
 
 			mod = (struct iop_mod *)(stack.info.vaddr - 48);
 			func_000007E0(mod);
 			mod->unkA = 3;
+
 			if ((ret & 3) == 2) {
 				mod->unkA = 19;
 			}
@@ -327,7 +337,9 @@ loadcore_main(u_int *in)
 				func_0000073C((void *)(ret & ~3), 2, 0);
 			}
 
-			mod = NULL;
+		next:
+			mp++;
+			fixaddr = 0;
 		} while (*mp);
 	}
 
@@ -341,18 +353,18 @@ loadcore_main(u_int *in)
 			lc.rbn_ptr = NULL;
 		}
 
-		rbnp = rbn;
-		while (rbnp->hnd) {
-			if (((int)rbnp->hnd & 3) == stack.i) {
-				asm volatile("move $gp,%0 \n" : : "r"(rbnp->gp));
+		for (rbnp = rbn; rbn->hnd; rbnp++) {
+			u_int prio = rbnp->hnd & 3;
+
+			if (stack.i == rbnp->hnd & 3) {
+				asm volatile("move $gp, %0 \n" : : "r"(rbnp->gp) : "memory");
+
 				if (stack.i == 3) {
-					((int (*)())(rbnp->hnd & ~3))(rbnp, 1);
+					((int (*)())(rbnp->hnd & ~3))(rbnp + 1, 1);
 				} else {
-					((int (*)())(rbnp->hnd & ~3))(&stack.mode, 1);
+					((int (*)())(rbnp->hnd & ~3))(rbn, 1);
 				}
 			}
-
-			rbnp++;
 		}
 
 		if (stack.i == 2) {
