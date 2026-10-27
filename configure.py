@@ -39,6 +39,7 @@ build_targets = [
     "excepman",
     "loadcore",
     "sysmem",
+    "intrmani",
 ]
 
 TARGET_ELFS = [
