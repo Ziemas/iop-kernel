@@ -125,8 +125,8 @@ loadcore_main(u_int *in)
 	void *addr;
 	char *argstr;
 	void *fixaddr;
-	struct reboot_notify *rbn;
-	struct reboot_notify *rbnp;
+	struct reboot_notify *reboot_cbs;
+	struct reboot_notify *cbp;
 	struct iop_mod *sysmem_mod;
 	struct iop_mod *lc_mod;
 	struct iop_mod *mod;
@@ -135,13 +135,11 @@ loadcore_main(u_int *in)
 	int *bm;
 	void **mptr;
 	int len;
+	struct exe_info info;
+	int i;
+	u_int alloc_base;
 
-	// Genuinely seems to be the only way this works?
-	struct {
-		struct exe_info info;
-
-		int unk;
-
+	struct boot_data {
 		u_int memsize;
 		u_int mode;
 		void *arg;
@@ -150,8 +148,6 @@ loadcore_main(u_int *in)
 		u_int rp_size;
 		int mod_count;
 		void **mod_data;
-
-		int i;
 	} stack;
 
 	stack.memsize = in[0];
@@ -168,7 +164,6 @@ loadcore_main(u_int *in)
 
 	lc.intr_func = NULL;
 	lc.lib = stack.load_base;
-
 	lc.unk4 = stack.load_base;
 
 	lc.lib->next = 0;
@@ -177,13 +172,12 @@ loadcore_main(u_int *in)
 	lc.unk8.unk4 = 0;
 	lc.next_id = 3;
 
-	stack.i = 0;
-	while (stack.i < 17) {
-		bootmodes[stack.i++] = 0;
+	for (i = 0; i < 17; i++) {
+		bootmodes[i] = 0;
 	}
 
-	stack.i = BOOTMODE(4, stack.mode & 0xffff, 0);
-	RegisterBootMode(&stack.i);
+	i = BOOTMODE(4, stack.mode & 0xffff, 0);
+	RegisterBootMode(&i);
 
 	lc.modlist = (void *)(lc.unk4 - 0x30);
 
@@ -202,8 +196,8 @@ loadcore_main(u_int *in)
 
 	// Register the memory we occupy with sysmem
 
-	AllocSysMemory(SMEM_Addr, &_end - (void *)((u_int)(((int)&_ftext - 0x30 >> 8) << 8)),
-	  (void *)((u_int)(((int)&_ftext - 0x30 >> 8) << 8) & 0x1fffffff));
+	alloc_base = ((u_int)(((int)&_ftext - 0x30 >> 8) << 8));
+	AllocSysMemory(SMEM_Addr, &_end - (void *)alloc_base, (void *)(alloc_base & 0x1fffffff));
 
 	if (stack.rp_buf) {
 		// temporarily allocate the ioprp buffer
@@ -218,8 +212,8 @@ loadcore_main(u_int *in)
 	// At this point our stack grows down from end of RAM, so use we can figure out
 	// the size to allocate by subtracting from QueryMemSize
 	if (stack_low < QueryMemSize()) {
-		// hack
-		if (rbnp) {
+		// HACK:
+		if (cbp) {
 			AllocSysMemory(2, QueryMemSize() - ((u_int)stack_low), stack_low);
 		} else {
 			AllocSysMemory(2, QueryMemSize() - ((u_int)stack_low), stack_low);
@@ -242,8 +236,8 @@ loadcore_main(u_int *in)
 	lc_memmove(mptr, stack.mod_data, (stack.mod_count + 1) * 4);
 	stack.mod_data = mptr;
 
-	rbn = __builtin_alloca(stack.mod_count * sizeof(*lc.rbn_ptr));
-	lc.rbn_ptr = rbn;
+	reboot_cbs = __builtin_alloca(stack.mod_count * sizeof(*lc.rbn_ptr));
+	lc.rbn_ptr = reboot_cbs;
 
 	addr = QueryBlockTopAddress(0);
 	while (addr != -1) {
@@ -261,86 +255,79 @@ loadcore_main(u_int *in)
 		addr = QueryBlockTopAddress(addr + BlockSize);
 	}
 
+	mp = &stack.mod_data[2];
+	reboot_cbs[0].hnd = 0;
+	i = -1;
 	fixaddr = 0;
-	mp = stack.mod_data;
-	rbn[0].hnd = 0;
-	stack.i = -1;
-
-	if (mp[2]) {
-		mp = &mp[2];
-
-		do {
-			if (((u_int)(*mp) & 1)) {
-				if (((u_int)(*mp) & 0xf) == 1) {
-					fixaddr = (void *)(((u_int)*mp) >> 2);
-				}
-
-				mp++;
-				continue;
+	while (*mp) {
+		if (((u_int)(*mp) & 1)) {
+			if (((u_int)(*mp) & 0xf) == 1) {
+				fixaddr = (void *)(((u_int)*mp) >> 2);
 			}
 
-			stack.i = (stack.i + 1) & 0xf;
-			switch (func_000014A0(*mp, &stack.info)) {
-			case 1:
-			case 3: {
-				u_int v = ((unsigned int)(stack.info.vaddr - 48) >> 8 << 8) & 0x1fffffff;
+			mp++;
+			continue;
+		}
 
-				if (AllocSysMemory(SMEM_Addr, stack.info.memsz + stack.info.vaddr - v,
-					  (void *)(v)) == 0) {
-					goto error;
-				}
+		i = (i + 1) & 0xf;
+		switch (func_000014A0(*mp, &info)) {
+		case 1:
+		case 3: {
+			u_int v = ((unsigned int)(info.vaddr - 48) >> 8 << 8) & 0x1fffffff;
 
-			} break;
-
-			case 2:
-			case 4:
-				if (!fixaddr) {
-					stack.info.vaddr = (u_int)AllocSysMemory(SMEM_Low, stack.info.memsz + 48, NULL);
-				} else {
-					stack.info.vaddr = (u_int)AllocSysMemory(SMEM_Addr, stack.info.memsz + 48,
-					  fixaddr);
-				}
-				if (!stack.info.vaddr) {
-					goto error;
-				}
-
-				stack.info.vaddr = (u_int)stack.info.vaddr + 48;
-				break;
-			default:
+			if (AllocSysMemory(SMEM_Addr, info.memsz + info.vaddr - v, (void *)(v)) == 0) {
 				goto error;
 			}
 
-			func_0000169C(*mp, &stack.info);
-			if (func_00000CAC((void *)stack.info.vaddr, stack.info.text_size)) {
-				FreeSysMemory((void *)(((stack.info.vaddr - 0x30) >> 8) << 8));
-				goto next;
+		} break;
+
+		case 2:
+		case 4:
+			if (!fixaddr) {
+				info.vaddr = (u_int)AllocSysMemory(SMEM_Low, info.memsz + 48, NULL);
+			} else {
+				info.vaddr = (u_int)AllocSysMemory(SMEM_Addr, info.memsz + 48, fixaddr);
+			}
+			if (!info.vaddr) {
+				goto error;
 			}
 
-			FlushIcache();
-			asm volatile("move $gp,%0 \n" : : "r"(stack.info.gp));
-			ret = ((int (*)(int, int, int, int))stack.info.entry)(0, 0, (int)mp, 0);
-			if ((ret & 3) == 1) {
-				func_00000D68((void *)stack.info.vaddr, stack.info.text_size);
-				FreeSysMemory((void *)(((stack.info.vaddr - 0x30) >> 8) << 8));
-				goto next;
-			}
+			info.vaddr = info.vaddr + 0x30;
+			break;
+		default:
+			goto error;
+		}
 
-			mod = (struct iop_mod *)(stack.info.vaddr - 48);
-			func_000007E0(mod);
-			mod->unkA = 3;
+		func_0000169C(*mp, &info);
+		if (func_00000CAC((void *)info.vaddr, info.text_size)) {
+			FreeSysMemory((void *)(((info.vaddr - 0x30) >> 8) << 8));
+			goto next;
+		}
 
-			if ((ret & 3) == 2) {
-				mod->unkA = 19;
-			}
+		FlushIcache();
+		asm volatile("move $gp,%0 \n" : : "r"(info.gp));
+		ret = ((int (*)(int, int, int, int))info.entry)(0, 0, (int)mp, 0);
+		if ((ret & 3) == 1) {
+			func_00000D68((void *)info.vaddr, info.text_size);
+			FreeSysMemory((void *)(((info.vaddr - 0x30) >> 8) << 8));
+			goto next;
+		}
 
-			if (ret & ~3) {
-				func_0000073C((void *)(ret & ~3), 2, 0);
-			}
+		mod = (struct iop_mod *)(info.vaddr - 48);
+		func_000007E0(mod);
+		mod->unkA = 3;
 
-		next:
-			mp++;
-			fixaddr = 0;
-		} while (*mp);
+		if ((ret & 3) == 2) {
+			mod->unkA = 19;
+		}
+
+		if (ret & ~3) {
+			func_0000073C((void *)(ret & ~3), 2, 0);
+		}
+
+	next:
+		mp++;
+		fixaddr = 0;
 	}
 
 	if (stack.rp_buf) {
@@ -348,33 +335,33 @@ loadcore_main(u_int *in)
 		FreeSysMemory(stack.rp_buf);
 	}
 
-	for (stack.i = 0; stack.i < 4; stack.i++) {
-		if (stack.i == 3) {
+	for (i = 0; i < 4; i++) {
+		if (i == 3) {
 			lc.rbn_ptr = NULL;
 		}
 
-		for (rbnp = rbn; rbn->hnd; rbnp++) {
-			u_int prio = rbnp->hnd & 3;
+		for (cbp = reboot_cbs; cbp->hnd; cbp++) {
+			u_int prio = cbp->hnd & 3;
 
-			if (stack.i == rbnp->hnd & 3) {
-				asm volatile("move $gp, %0 \n" : : "r"(rbnp->gp) : "memory");
+			if (prio == i) {
+				asm volatile("move $gp, %0 \n" : : "r"(cbp->gp) : "memory");
 
-				if (stack.i == 3) {
-					((int (*)())(rbnp->hnd & ~3))(rbnp + 1, 1);
+				if (i == 3) {
+					((int (*)())(cbp->hnd & ~3))(cbp + 1, 1);
 				} else {
-					((int (*)())(rbnp->hnd & ~3))(rbn, 1);
+					((int (*)())(cbp->hnd & ~3))(reboot_cbs, 1);
 				}
 			}
 		}
 
-		if (stack.i == 2) {
-			while (rbn < rbnp) {
-				rbnp--;
-				if ((rbnp->hnd & 3) == 3) {
+		if (i == 2) {
+			while (reboot_cbs < cbp) {
+				cbp--;
+				if ((cbp->hnd & 3) == 3) {
 					break;
 				}
 
-				rbnp->hnd = 0;
+				cbp->hnd = 0;
 			}
 		}
 	}
