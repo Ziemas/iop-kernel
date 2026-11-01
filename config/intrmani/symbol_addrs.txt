@@ -1,6 +1,8 @@
 start = 0x0; // type:func
 RegisterIntrHandler = 0x148; // type:func
 ReleaseIntrHandler = 0x270; // type:func
+CpuSuspendIntr = 0x348; // type:func
+CpuResumeIntr = 0x374; // type:func
 CpuDisableIntr = 0x388; // type:func
 CpuEnableIntr = 0x3b4; // type:func
 EnableIntr = 0x458; // type:func
