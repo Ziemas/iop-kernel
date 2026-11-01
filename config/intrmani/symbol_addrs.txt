@@ -1,1 +1,22 @@
 start = 0x0; // type:func
+RegisterIntrHandler = 0x148; // type:func
+ReleaseIntrHandler = 0x270; // type:func
+CpuDisableIntr = 0x388; // type:func
+CpuEnableIntr = 0x3b4; // type:func
+EnableIntr = 0x458; // type:func
+DisableIntr = 0x638; // type:func
+QueryIntrContext = 0xd70; // type:func
+QueryIntrStack = 0xd74; // type:func
+
+exc_irq = 0xe04;
+exc_irq_fb = 0x12d8;
+exc_syscall = 0x1300;
+dma_irq = 0x9a8;
+
+intrman_entry = 0x1480;
+
+im = 0x15f0; // size:0x810
+
+RegisterLibraryEntries = 0x1534; // type:func
+RegisterExceptionHandler = 0x1558; // type:func
+RegisterPriorityExceptionHandler = 0x1560; // type:func
